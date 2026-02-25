@@ -1,0 +1,11 @@
+option('max_rules',
+  type : 'integer',
+  value : 1024,
+  description : 'Maximum number of firewall rules'
+)
+
+option('enable_debug',
+  type : 'boolean',
+  value : false,
+  description : 'Enable debug logging and assertions'
+)

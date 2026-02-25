@@ -1,0 +1,41 @@
+dpdk = dependency('libdpdk', required : true)
+jansson = dependency('jansson', required : true)
+
+test_inc = include_directories('../include')
+
+# test_rule_engine
+test_rule_engine = executable('test_rule_engine',
+  sources : [
+    files('test_rule_engine.c'),
+    files('../src/rule_engine.c'),
+    files('../src/log.c'),
+  ],
+  include_directories : test_inc,
+  dependencies : [dpdk, jansson],
+)
+test('rule_engine', test_rule_engine)
+
+# test_ddos
+test_ddos = executable('test_ddos',
+  sources : [
+    files('test_ddos.c'),
+    files('../src/ddos.c'),
+    files('../src/log.c'),
+  ],
+  include_directories : test_inc,
+  dependencies : [dpdk, jansson],
+)
+test('ddos', test_ddos)
+
+# test_config — includes rule_engine.c because config.c calls rule_engine_rebuild()
+test_config = executable('test_config',
+  sources : [
+    files('test_config.c'),
+    files('../src/config.c'),
+    files('../src/rule_engine.c'),
+    files('../src/log.c'),
+  ],
+  include_directories : test_inc,
+  dependencies : [dpdk, jansson],
+)
+test('config', test_config)

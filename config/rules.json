@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "mode": "bridge",
+  "ports": {
+    "wan": "0001:01:00.0",
+    "lan": "builtin"
+  },
+  "default_policy": "drop",
+  "hugepages": {
+    "size_mb": 1024
+  },
+  "ddos": {
+    "enabled": true,
+    "window_ms": 100,
+    "syn_pps_threshold": 10000,
+    "udp_pps_threshold": 50000,
+    "icmp_pps_threshold": 5000,
+    "block_duration_s": 300
+  },
+  "logging": {
+    "level": "info",
+    "file": "/var/log/dpdk_firewall.log"
+  },
+  "rules": [
+    {
+      "id": 1,
+      "priority": 100,
+      "comment": "Разрешить SSH из управляющей сети",
+      "proto": "tcp",
+      "src_ip": "192.168.1.0/24",
+      "dst_port": "22",
+      "tcp_flags": "ACK",
+      "action": "accept"
+    },
+    {
+      "id": 2,
+      "priority": 200,
+      "comment": "Ограничить ICMP глобально",
+      "proto": "icmp",
+      "action": "rate_limit",
+      "rate": {
+        "cir_kbps": 1000,
+        "cbs_bytes": 65536
+      }
+    },
+    {
+      "id": 3,
+      "priority": 300,
+      "comment": "Заблокировать вредоносную подсеть",
+      "src_ip": "10.99.0.0/16",
+      "action": "drop"
+    },
+    {
+      "id": 4,
+      "priority": 65000,
+      "comment": "Разрешить весь трафик из LAN",
+      "src_ip": "192.168.1.0/24",
+      "action": "accept"
+    }
+  ]
+}

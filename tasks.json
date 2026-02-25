@@ -4,7 +4,7 @@
   "tasks": [
     {
       "id": "P1-01",
-      "status": "pending",
+      "status": "done",
       "priority": 1,
       "phase": 1,
       "title": "Создать структуру проекта и систему сборки",
@@ -13,7 +13,7 @@
     },
     {
       "id": "P1-02",
-      "status": "pending",
+      "status": "done",
       "priority": 2,
       "phase": 1,
       "title": "Реализовать include/firewall.h — центральные типы",
@@ -22,7 +22,7 @@
     },
     {
       "id": "P1-03",
-      "status": "pending",
+      "status": "done",
       "priority": 3,
       "phase": 1,
       "title": "Реализовать include/log.h и src/log.c",
@@ -31,7 +31,7 @@
     },
     {
       "id": "P1-04",
-      "status": "pending",
+      "status": "done",
       "priority": 4,
       "phase": 1,
       "title": "Реализовать src/port.c — инициализация DPDK-портов",
@@ -40,7 +40,7 @@
     },
     {
       "id": "P1-05",
-      "status": "pending",
+      "status": "done",
       "priority": 5,
       "phase": 1,
       "title": "Реализовать src/config.c и include/config.h — загрузка конфигурации",
@@ -49,7 +49,7 @@
     },
     {
       "id": "P1-06",
-      "status": "pending",
+      "status": "done",
       "priority": 6,
       "phase": 1,
       "title": "Реализовать src/main.c — точка входа",
@@ -58,7 +58,7 @@
     },
     {
       "id": "P1-07",
-      "status": "pending",
+      "status": "done",
       "priority": 7,
       "phase": 1,
       "title": "Реализовать src/pipeline.c — минимальный RX→TX цикл",
@@ -67,7 +67,7 @@
     },
     {
       "id": "P1-08",
-      "status": "pending",
+      "status": "done",
       "priority": 8,
       "phase": 1,
       "title": "Создать config/rules.json — пример конфигурации",
