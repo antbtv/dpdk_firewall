@@ -1,6 +1,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "firewall.h"
+
+/*
+ * Stub globals normally defined in main.c.
+ * Required because config.c references g_default_policy,
+ * but test binaries do not link main.c.
+ */
+volatile fw_action_t g_default_policy = ACTION_DROP;
+volatile int         g_force_quit     = 0;
+
 /*
  * TODO: P4-06 — full unit tests for the config parser.
  *
