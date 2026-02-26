@@ -15,8 +15,11 @@ max_rules = get_option('max_rules')
 enable_debug = get_option('enable_debug')
 
 # Global compile args
+# _GNU_SOURCE is required for POSIX extensions used by the project (strcasecmp,
+# strnlen, sigaction, sigemptyset) and by DPDK internal headers (rte_string_fns.h).
 global_args = [
   '-DMAX_RULES=' + max_rules.to_string(),
+  '-D_GNU_SOURCE',
 ]
 if enable_debug
   global_args += ['-DDEBUG', '-DRTE_LOG_DP_LEVEL=RTE_LOG_DEBUG']
