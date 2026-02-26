@@ -80,7 +80,7 @@
       "priority": 9,
       "phase": 1,
       "title": "Milestone 1: Верификация базовой пересылки",
-      "description": "На RPi5: 1) Привязать I210 к vfio-pci. 2) Собрать проект: meson setup build --optimization=3 && ninja -C build. 3) Запустить: sudo ./build/dpdk_firewall --config config/rules.json. 4) С другой машины запустить iperf3 через RPi5 — убедиться, что пакеты пересылаются. 5) Проверить, что процесс запускается без ошибок DPDK EAL. Ожидаемый результат: базовый iperf3 показывает ≥ 900 Мбит/с для пакетов 1500 байт.",
+      "description": "ВАЖНО: реальный setup RPi5 отличается от исходного плана (см. CLAUDE.md Hardware Setup). Шаги: 1) Выделить hugepages: echo 512 | sudo tee /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages (cmdline.txt игнорируется Ubuntu). 2) Привязать I210 к uio_pci_generic (НЕ vfio-pci — нет IOMMU): sudo modprobe uio_pci_generic && sudo dpdk-devbind.py -b uio_pci_generic 0001:01:00.0. 3) Поднять eth0: sudo ip link set eth0 up. 4) Собрать: meson setup build --optimization=3 && ninja -C build. 5) Запустить: sudo ./build/dpdk_firewall --config config/rules.json --log-level debug. 6) Убедиться, что Port 0 (I210) и Port 1 (eth0/af_packet) стартовали, lcores 1 и 2 запущены. ВЫПОЛНЕНО: шаги 1-6 пройдены, EAL инициализируется корректно. ОЖИДАЕТ: iperf3 тест ≥ 900 Мбит/с (нужны 2 кабеля + вторая машина на LAN-стороне).",
       "depends_on": ["P1-06", "P1-07", "P1-08"]
     },
     {
