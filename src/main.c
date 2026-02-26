@@ -99,14 +99,19 @@ prescan_args(int argc, char *argv[],
 /**
  * Minimal JSON parse to extract PCI addresses from the config file.
  * Called BEFORE rte_eal_init so we can build the --allow list.
- * "builtin" for LAN is resolved to "0002:01:00.0".
+ * "builtin" for LAN means the BCM54213PE on RPi5 RP1 south bridge —
+ * it cannot be bound to vfio-pci/uio_pci_generic, so we use the
+ * af_packet PMD (--vdev) instead. lan_is_builtin_out is set to 1
+ * in that case, and lan_out is left empty.
  */
 static int
 extract_pci_addrs(const char *path,
                   char *wan_out, size_t wan_sz,
-                  char *lan_out, size_t lan_sz)
+                  char *lan_out, size_t lan_sz,
+                  int *lan_is_builtin_out)
 {
     wan_out[0] = lan_out[0] = '\0';
+    *lan_is_builtin_out = 0;
 
     json_error_t jerr;
     json_t *root = json_load_file(path, 0, &jerr);
@@ -125,10 +130,12 @@ extract_pci_addrs(const char *path,
             snprintf(wan_out, wan_sz, "%s", wan);
 
         if (lan) {
-            if (strcasecmp(lan, "builtin") == 0)
-                snprintf(lan_out, lan_sz, "0002:01:00.0");
-            else
+            if (strcasecmp(lan, "builtin") == 0) {
+                *lan_is_builtin_out = 1;
+                /* lan_out stays empty — EAL will get --vdev instead */
+            } else {
                 snprintf(lan_out, lan_sz, "%s", lan);
+            }
         }
     }
 
@@ -155,8 +162,10 @@ main(int argc, char *argv[])
 
     /* ── Step 2: Extract PCI addresses (no EAL yet) ─────────────────────── */
     char wan_pci[32], lan_pci[32];
+    int  lan_is_builtin = 0;
     if (extract_pci_addrs(config_path, wan_pci, sizeof(wan_pci),
-                                       lan_pci, sizeof(lan_pci)) != 0)
+                                       lan_pci, sizeof(lan_pci),
+                                       &lan_is_builtin) != 0)
         return EXIT_FAILURE;
 
     /* ── Step 3: Build synthetic EAL argv ───────────────────────────────── */
@@ -185,6 +194,13 @@ main(int argc, char *argv[])
     EAL_PUSH("primary");
     if (wan_pci[0]) { EAL_PUSH("--allow"); EAL_PUSH(wan_pci); }
     if (lan_pci[0]) { EAL_PUSH("--allow"); EAL_PUSH(lan_pci); }
+    if (lan_is_builtin) {
+        /* BCM54213PE on RPi5 cannot be bound to a DPDK PMD via PCI.
+         * Use the af_packet PMD: receives/sends through the kernel
+         * eth0 interface via AF_PACKET sockets — no driver rebinding needed. */
+        EAL_PUSH("--vdev");
+        EAL_PUSH("eth_af_packet0,iface=eth0");
+    }
 
 #undef EAL_PUSH
 
