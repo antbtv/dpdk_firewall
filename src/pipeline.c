@@ -35,19 +35,25 @@ pipeline_lcore_main(void *arg)
     struct rte_mbuf *rx_pkts[MAX_BURST];
 
     uint64_t last_hw_stats_tsc = 0;
+    uint64_t sw_rx = 0;
+    uint64_t sw_tx = 0;
+    uint64_t sw_tx_drop = 0;
 
     while (!g_force_quit) {
 
         /* ── Stage 1: RX BURST ─────────────────────────────────────────── */
         uint16_t n = rte_eth_rx_burst(port_in, 0, rx_pkts, MAX_BURST);
+        sw_rx += n;
 
         /* Debug: hardware-level RX stats once per second */
         uint64_t now_tsc = rte_get_tsc_cycles();
         if (now_tsc - last_hw_stats_tsc > rte_get_tsc_hz()) {
             struct rte_eth_stats hw;
             rte_eth_stats_get(port_in, &hw);
-            fprintf(stderr, "HW port%u: rx=%"PRIu64" miss=%"PRIu64" err=%"PRIu64" tx=%"PRIu64"\n",
-                    port_in, hw.ipackets, hw.imissed, hw.ierrors, hw.opackets);
+            fprintf(stderr, "port%u HW rx=%"PRIu64" miss=%"PRIu64" err=%"PRIu64" tx=%"PRIu64
+                            " | SW rx=%"PRIu64" tx=%"PRIu64" drop=%"PRIu64"\n",
+                    port_in, hw.ipackets, hw.imissed, hw.ierrors, hw.opackets,
+                    sw_rx, sw_tx, sw_tx_drop);
             last_hw_stats_tsc = now_tsc;
         }
 
@@ -67,9 +73,11 @@ pipeline_lcore_main(void *arg)
 
         /* ── Stage 7: TX BURST ─────────────────────────────────────────── */
         uint16_t sent = rte_eth_tx_burst(port_out, 0, rx_pkts, n);
+        sw_tx += sent;
 
         /* Free any packets that the TX queue could not accept */
         if (unlikely(sent < n)) {
+            sw_tx_drop += (n - sent);
             for (uint16_t i = sent; i < n; i++)
                 rte_pktmbuf_free(rx_pkts[i]);
         }
