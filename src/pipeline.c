@@ -40,6 +40,10 @@ pipeline_lcore_main(void *arg)
         if (n == 0)
             continue;
 
+        /* DEBUG P1-09 */
+        fprintf(stderr, "DBG lcore%u port%u->%u rx=%u\n",
+                rte_lcore_id(), port_in, port_out, n);
+
         /*
          * Stages 2-6 are stubs for Phase 1.
          * All packets are forwarded as-is (bridge mode, no filtering).
