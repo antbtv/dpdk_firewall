@@ -96,22 +96,43 @@ prescan_args(int argc, char *argv[],
     return 0;
 }
 
+/** Returns 1 if s looks like a PCIe address (DDDD:BB:SS.F). */
+static int
+is_pci_addr(const char *s)
+{
+    int colons = 0, dots = 0;
+    if (!s) return 0;
+    for (const char *p = s; *p; p++) {
+        if      (*p == ':')  colons++;
+        else if (*p == '.')  dots++;
+        else if (!((*p >= '0' && *p <= '9') ||
+                   (*p >= 'a' && *p <= 'f') ||
+                   (*p >= 'A' && *p <= 'F')))
+            return 0;
+    }
+    return (colons == 2 && dots == 1);
+}
+
 /**
- * Minimal JSON parse to extract PCI addresses from the config file.
- * Called BEFORE rte_eal_init so we can build the --allow list.
- * "builtin" for LAN means the BCM54213PE on RPi5 RP1 south bridge —
- * it cannot be bound to vfio-pci/uio_pci_generic, so we use the
- * af_packet PMD (--vdev) instead. lan_is_builtin_out is set to 1
- * in that case, and lan_out is left empty.
+ * Minimal JSON parse to extract port configuration from the config file.
+ * Called BEFORE rte_eal_init so we can build the --allow/--vdev list.
+ *
+ * Each of "wan"/"lan" in config "ports" can be:
+ *   - a PCI address ("0001:01:00.0") → written to *_pci_out
+ *   - an interface name ("enP1p1s0", "eth0") → written to *_iface_out
+ *   - the keyword "builtin" (lan only) → treated as iface "eth0"
+ *
+ * Exactly one of *_pci_out / *_iface_out will be non-empty per port.
  */
 static int
 extract_pci_addrs(const char *path,
-                  char *wan_out, size_t wan_sz,
-                  char *lan_out, size_t lan_sz,
-                  int *lan_is_builtin_out)
+                  char *wan_pci_out,   size_t wan_pci_sz,
+                  char *wan_iface_out, size_t wan_iface_sz,
+                  char *lan_pci_out,   size_t lan_pci_sz,
+                  char *lan_iface_out, size_t lan_iface_sz)
 {
-    wan_out[0] = lan_out[0] = '\0';
-    *lan_is_builtin_out = 0;
+    wan_pci_out[0] = wan_iface_out[0] = '\0';
+    lan_pci_out[0] = lan_iface_out[0] = '\0';
 
     json_error_t jerr;
     json_t *root = json_load_file(path, 0, &jerr);
@@ -126,22 +147,26 @@ extract_pci_addrs(const char *path,
         const char *wan = json_string_value(json_object_get(ports, "wan"));
         const char *lan = json_string_value(json_object_get(ports, "lan"));
 
-        if (wan)
-            snprintf(wan_out, wan_sz, "%s", wan);
+        if (wan) {
+            if (is_pci_addr(wan))
+                snprintf(wan_pci_out, wan_pci_sz, "%s", wan);
+            else
+                snprintf(wan_iface_out, wan_iface_sz, "%s", wan);
+        }
 
         if (lan) {
-            if (strcasecmp(lan, "builtin") == 0) {
-                *lan_is_builtin_out = 1;
-                /* lan_out stays empty — EAL will get --vdev instead */
-            } else {
-                snprintf(lan_out, lan_sz, "%s", lan);
-            }
+            if (strcasecmp(lan, "builtin") == 0)
+                snprintf(lan_iface_out, lan_iface_sz, "eth0");
+            else if (is_pci_addr(lan))
+                snprintf(lan_pci_out, lan_pci_sz, "%s", lan);
+            else
+                snprintf(lan_iface_out, lan_iface_sz, "%s", lan);
         }
     }
 
     json_decref(root);
 
-    if (wan_out[0] == '\0') {
+    if (wan_pci_out[0] == '\0' && wan_iface_out[0] == '\0') {
         fprintf(stderr, "Config '%s' missing 'ports.wan'\n", path);
         return -1;
     }
@@ -160,12 +185,14 @@ main(int argc, char *argv[])
     if (prescan_args(argc, argv, &config_path, &cli_log_level) != 0)
         return EXIT_FAILURE;
 
-    /* ── Step 2: Extract PCI addresses (no EAL yet) ─────────────────────── */
-    char wan_pci[32], lan_pci[32];
-    int  lan_is_builtin = 0;
-    if (extract_pci_addrs(config_path, wan_pci, sizeof(wan_pci),
-                                       lan_pci, sizeof(lan_pci),
-                                       &lan_is_builtin) != 0)
+    /* ── Step 2: Extract port configuration (no EAL yet) ────────────────── */
+    char wan_pci[32], wan_iface[32];
+    char lan_pci[32], lan_iface[32];
+    if (extract_pci_addrs(config_path,
+                          wan_pci,   sizeof(wan_pci),
+                          wan_iface, sizeof(wan_iface),
+                          lan_pci,   sizeof(lan_pci),
+                          lan_iface, sizeof(lan_iface)) != 0)
         return EXIT_FAILURE;
 
     /* ── Step 3: Build synthetic EAL argv ───────────────────────────────── */
@@ -173,14 +200,20 @@ main(int argc, char *argv[])
      * rte_eal_init() needs writable, null-terminated strings.
      * Use a fixed 2-D array on the stack; each slot is EAL_ARG_LEN bytes.
      *
-     * Layout: dpdk_firewall --proc-type primary --allow <wan> --allow <lan>
-     * Maximum: 7 args — well within EAL_MAX_ARGS.
+     * Port mapping (in probing order):
+     *   PCI ports come before vdev ports in DPDK probing order.
+     *   vdev ports are probed in the order of --vdev arguments.
+     *   So: first WAN entry → port 0, second LAN entry → port 1.
+     *
+     * Maximum args: 9 (prog + --proc-type primary + 2×(--allow|--vdev X))
      */
 #define EAL_MAX_ARGS 16
 #define EAL_ARG_LEN  64
     char  eal_storage[EAL_MAX_ARGS][EAL_ARG_LEN];
     char *eal_argv[EAL_MAX_ARGS];
-    int   eal_argc = 0;
+    int   eal_argc  = 0;
+    int   vdev_idx  = 0;   /* index suffix for eth_af_packetN names */
+    char  vdev_arg[EAL_ARG_LEN];
 
 #define EAL_PUSH(str) \
     do { \
@@ -192,14 +225,26 @@ main(int argc, char *argv[])
     EAL_PUSH(argv[0]);
     EAL_PUSH("--proc-type");
     EAL_PUSH("primary");
-    if (wan_pci[0]) { EAL_PUSH("--allow"); EAL_PUSH(wan_pci); }
-    if (lan_pci[0]) { EAL_PUSH("--allow"); EAL_PUSH(lan_pci); }
-    if (lan_is_builtin) {
-        /* BCM54213PE on RPi5 cannot be bound to a DPDK PMD via PCI.
-         * Use the af_packet PMD: receives/sends through the kernel
-         * eth0 interface via AF_PACKET sockets — no driver rebinding needed. */
-        EAL_PUSH("--vdev");
-        EAL_PUSH("eth_af_packet0,iface=eth0");
+
+    /* WAN port */
+    if (wan_pci[0]) {
+        EAL_PUSH("--allow"); EAL_PUSH(wan_pci);
+    } else if (wan_iface[0]) {
+        /* BCM2712 PCIe has no IOMMU → uio_pci_generic DMA fails (64 GB
+         * address offset).  Keep the NIC under the kernel igb driver and
+         * reach it via AF_PACKET sockets — no rebinding needed. */
+        snprintf(vdev_arg, sizeof(vdev_arg),
+                 "eth_af_packet%d,iface=%s", vdev_idx++, wan_iface);
+        EAL_PUSH("--vdev"); EAL_PUSH(vdev_arg);
+    }
+
+    /* LAN port */
+    if (lan_pci[0]) {
+        EAL_PUSH("--allow"); EAL_PUSH(lan_pci);
+    } else if (lan_iface[0]) {
+        snprintf(vdev_arg, sizeof(vdev_arg),
+                 "eth_af_packet%d,iface=%s", vdev_idx++, lan_iface);
+        EAL_PUSH("--vdev"); EAL_PUSH(vdev_arg);
     }
 
 #undef EAL_PUSH

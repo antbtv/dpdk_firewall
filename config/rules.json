@@ -2,7 +2,7 @@
   "version": 1,
   "mode": "bridge",
   "ports": {
-    "wan": "0001:01:00.0",
+    "wan": "enP1p1s0",
     "lan": "builtin"
   },
   "default_policy": "drop",
