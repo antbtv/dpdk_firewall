@@ -2,6 +2,7 @@
 #include <rte_mbuf.h>
 #include <rte_lcore.h>
 #include <rte_branch_prediction.h>
+#include <rte_cycles.h>
 
 #include "pipeline.h"
 #include "firewall.h"
@@ -33,10 +34,23 @@ pipeline_lcore_main(void *arg)
     /* Stack-allocated packet arrays — never heap-allocated (PRD §8 key principles) */
     struct rte_mbuf *rx_pkts[MAX_BURST];
 
+    uint64_t last_hw_stats_tsc = 0;
+
     while (!g_force_quit) {
 
         /* ── Stage 1: RX BURST ─────────────────────────────────────────── */
         uint16_t n = rte_eth_rx_burst(port_in, 0, rx_pkts, MAX_BURST);
+
+        /* Debug: hardware-level RX stats once per second */
+        uint64_t now_tsc = rte_get_tsc_cycles();
+        if (now_tsc - last_hw_stats_tsc > rte_get_tsc_hz()) {
+            struct rte_eth_stats hw;
+            rte_eth_stats_get(port_in, &hw);
+            fprintf(stderr, "HW port%u: rx=%"PRIu64" miss=%"PRIu64" err=%"PRIu64" tx=%"PRIu64"\n",
+                    port_in, hw.ipackets, hw.imissed, hw.ierrors, hw.opackets);
+            last_hw_stats_tsc = now_tsc;
+        }
+
         if (n == 0)
             continue;
 
