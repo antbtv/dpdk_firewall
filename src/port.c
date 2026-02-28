@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <rte_eal.h>
 #include <rte_ethdev.h>
@@ -133,8 +134,22 @@ port_init_all(uint16_t n_ports)
             /* non-fatal — continue */
         }
 
-        RTE_LOG_FW_INFO("Port %u started (socket %d)\n",
-                        port_id, rte_eth_dev_socket_id(port_id));
+        /* Wait up to 9 s for link to come UP (required for I210 DMA init) */
+        struct rte_eth_link link;
+        for (int i = 0; i < 9; i++) {
+            rte_eth_link_get_nowait(port_id, &link);
+            if (link.link_status == RTE_ETH_LINK_UP)
+                break;
+            RTE_LOG_FW_INFO("Port %u waiting for link... (%d/9)\n", port_id, i + 1);
+            sleep(1);
+        }
+        rte_eth_link_get_nowait(port_id, &link);
+
+        RTE_LOG_FW_INFO("Port %u started (socket %d) — link %s %u Mbps %s\n",
+                        port_id, rte_eth_dev_socket_id(port_id),
+                        link.link_status == RTE_ETH_LINK_UP ? "UP" : "DOWN",
+                        link.link_speed,
+                        link.link_duplex == RTE_ETH_LINK_FULL_DUPLEX ? "FD" : "HD");
     }
 
     return 0;
