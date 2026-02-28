@@ -40,10 +40,6 @@ pipeline_lcore_main(void *arg)
         if (n == 0)
             continue;
 
-        /* DEBUG P1-09: temporary RX counter — remove after test */
-        RTE_LOG_FW_INFO("DBG lcore%u port%u: rx %u pkts\n",
-                        rte_lcore_id(), port_in, n);
-
         /*
          * Stages 2-6 are stubs for Phase 1.
          * All packets are forwarded as-is (bridge mode, no filtering).
