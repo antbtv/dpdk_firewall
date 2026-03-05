@@ -279,12 +279,21 @@ rule_match(struct pkt_meta *m, uint32_t *rule_id_out)
         return g_default_policy;
     }
 
-    uint32_t result = 0;
-    const uint8_t *data = (const uint8_t *)m;
-    rte_acl_classify(ctx, &data, &result, 1, FW_NUM_ACL_CATEGORIES);
+    /*
+     * rte_acl NEON path on ARM requires num >= 4.
+     * Pad with 3 duplicate pointers; only result[0] is used.
+     * TODO P3-xx: replace with rule_match_batch() for full burst efficiency.
+     */
+    const uint8_t *d4[4] = {
+        (const uint8_t *)m, (const uint8_t *)m,
+        (const uint8_t *)m, (const uint8_t *)m,
+    };
+    uint32_t r4[4] = {0, 0, 0, 0};
+    rte_acl_classify(ctx, d4, r4, 4, FW_NUM_ACL_CATEGORIES);
 
     rte_rwlock_read_unlock(&g_acl_rwlock);
 
+    uint32_t result = r4[0];
     RTE_LOG_FW_DEBUG("rule_match: src=%08x proto=%u result=%u\n",
                      m->src_ip, m->proto, result);
 
