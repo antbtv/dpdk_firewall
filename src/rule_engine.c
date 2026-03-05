@@ -280,20 +280,49 @@ rule_match(struct pkt_meta *m, uint32_t *rule_id_out)
     }
 
     /*
-     * rte_acl NEON path on ARM requires num >= 4.
-     * Pad with 3 duplicate pointers; only result[0] is used.
-     * TODO P3-xx: replace with rule_match_batch() for full burst efficiency.
+     * NOTE: rte_acl_classify() returns result=0 for all inputs on
+     * DPDK 24.11.3 / ARM64 Ubuntu (both scalar and NEON paths fail).
+     * Root cause: unknown — likely a platform-specific build issue.
+     *
+     * Workaround: priority-ordered linear scan over g_rules[].
+     * Semantics identical to rte_acl: lowest fw_priority number wins.
+     * O(n) per packet — acceptable for MAX_RULES=1024 and a typical
+     * active rule set of tens of rules.
+     *
+     * rte_acl context is still built above (to keep the implementation
+     * in place) but its classify path is bypassed here.
      */
-    const uint8_t *d4[4] = {
-        (const uint8_t *)m, (const uint8_t *)m,
-        (const uint8_t *)m, (const uint8_t *)m,
-    };
-    uint32_t r4[4] = {0, 0, 0, 0};
-    rte_acl_classify(ctx, d4, r4, 4, FW_NUM_ACL_CATEGORIES);
-
     rte_rwlock_read_unlock(&g_acl_rwlock);
 
-    uint32_t result = r4[0];
+    uint32_t result       = 0;          /* 0 = no match (default policy) */
+    uint32_t best_prio    = UINT32_MAX; /* lower fw_priority = higher importance */
+
+    for (uint32_t i = 0; i < g_n_rules; i++) {
+        const struct fw_rule *r = &g_rules[i];
+
+        /* Early exit: can't beat current best */
+        if (r->priority >= best_prio)
+            continue;
+
+        /* src_ip CIDR (mask=0 → wildcard) */
+        if (r->src_mask && (m->src_ip & r->src_mask) != (r->src_ip & r->src_mask))
+            continue;
+        /* dst_ip CIDR */
+        if (r->dst_mask && (m->dst_ip & r->dst_mask) != (r->dst_ip & r->dst_mask))
+            continue;
+        /* proto (0 = any) */
+        if (r->proto && m->proto != r->proto)
+            continue;
+        /* port ranges */
+        if (m->src_port < r->src_port_min || m->src_port > r->src_port_max)
+            continue;
+        if (m->dst_port < r->dst_port_min || m->dst_port > r->dst_port_max)
+            continue;
+
+        best_prio = r->priority;
+        result    = i + 1; /* 1-based, 0 reserved for "no match" */
+    }
+
     RTE_LOG_FW_DEBUG("rule_match: src=%08x proto=%u result=%u\n",
                      m->src_ip, m->proto, result);
 
