@@ -1,6 +1,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "firewall.h"
+
+/* Stub globals — defined in main.c which test binaries do not link */
+volatile fw_action_t g_default_policy = ACTION_DROP;
+volatile int         g_force_quit     = 0;
+
+/* Stub g_fw_config — defined in config.c which test binaries do not link */
+#include "config.h"
+struct fw_config g_fw_config = {0};
+
 /*
  * TODO: P2-04 — full unit tests for the rule engine.
  *
