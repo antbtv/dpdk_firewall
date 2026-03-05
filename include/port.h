@@ -6,9 +6,9 @@
 #include <rte_mempool.h>
 
 /* Ring / pool sizing */
-#define RX_RING_SIZE  1024
-#define TX_RING_SIZE  1024
-#define NUM_MBUFS     8192   /* per port */
+#define RX_RING_SIZE  4096
+#define TX_RING_SIZE  4096
+#define NUM_MBUFS     16384  /* per port */
 #define MBUF_CACHE    256
 
 /**
