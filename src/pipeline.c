@@ -28,8 +28,9 @@
 
 /*
  * Parse one mbuf and fill pkt_meta.
- * IPs are kept in network byte order (NBO) — consistent with fw_rule and rte_acl MASK.
- * Ports are converted to host byte order (HBO) — required for correct rte_acl RANGE cmp.
+ * IPs are converted to host byte order (HBo) — rte_acl MASK applies prefix from
+ * the MSB of the integer, so HBo is required for correct CIDR matching on LE ARM.
+ * Ports are converted to host byte order (HBo) — required for correct rte_acl RANGE cmp.
  * Non-IPv4 frames set is_ipv4=0; all other fields are zeroed.
  */
 static void
@@ -44,8 +45,8 @@ classify_pkt(struct rte_mbuf *mbuf, struct pkt_meta *meta)
     }
 
     struct rte_ipv4_hdr *iph = (struct rte_ipv4_hdr *)(eth + 1);
-    meta->src_ip  = iph->src_addr;       /* NBO */
-    meta->dst_ip  = iph->dst_addr;       /* NBO */
+    meta->src_ip  = rte_be_to_cpu_32(iph->src_addr);  /* HBo: rte_acl MASK needs HBo */
+    meta->dst_ip  = rte_be_to_cpu_32(iph->dst_addr);  /* HBo */
     meta->proto   = iph->next_proto_id;
     meta->is_ipv4 = 1;
 

@@ -28,8 +28,8 @@ enum acl_field_idx {
 /*
  * Fields are laid out at fixed offsets within struct pkt_meta:
  *
- *   src_ip   : offset  0, 4 bytes  (MASK)    — network byte order
- *   dst_ip   : offset  4, 4 bytes  (MASK)    — network byte order
+ *   src_ip   : offset  0, 4 bytes  (MASK)    — host byte order (rte_acl MASK requires HBo)
+ *   dst_ip   : offset  4, 4 bytes  (MASK)    — host byte order
  *   src_port : offset  8, 2 bytes  (RANGE)   — host byte order (for correct range cmp)
  *   dst_port : offset 10, 2 bytes  (RANGE)   — host byte order
  *   proto    : offset 12, 1 byte   (BITMASK)
@@ -93,19 +93,17 @@ static uint32_t            g_rebuild_count;  /* unique suffix for ACL context na
 /* ─── Internal helpers ──────────────────────────────────────────────────── */
 
 /*
- * Convert a subnet mask stored in network byte order to a prefix length.
+ * Convert a subnet mask stored in host byte order to a prefix length.
  *
- * fw_rule stores masks as NBO uint32_t:
- *   /24 → inet_pton gives bytes [FF FF FF 00] → uint32_t NBO = 0x00FFFFFF on LE
- *   ntohl(0x00FFFFFF) = 0xFFFFFF00 → 8 trailing zeros → prefix = 32 - 8 = 24
+ * fw_rule stores masks as HBo uint32_t (after the NBO→HBo fix in parse_cidr):
+ *   /24 → mask = 0xFFFFFF00 (HBo) → 8 trailing zeros → prefix = 32 - 8 = 24
  */
 static uint8_t
-mask_to_prefix(uint32_t mask_nbo)
+mask_to_prefix(uint32_t mask_hbo)
 {
-    if (mask_nbo == 0)
+    if (mask_hbo == 0)
         return 0;
-    uint32_t h = ntohl(mask_nbo);
-    return (uint8_t)(32 - __builtin_ctz(h));
+    return (uint8_t)(32 - __builtin_ctz(mask_hbo));
 }
 
 /*
@@ -125,11 +123,11 @@ fw_rule_to_acl(const struct fw_rule *r, uint32_t idx, struct fw_acl_rule *ar)
     ar->data.userdata      = idx + 1;   /* 1-based; 0 reserved for "no match" */
     ar->data.category_mask = 0x1;       /* single category */
 
-    /* src_ip — NBO, MASK */
+    /* src_ip — HBo, MASK (rte_acl MASK applies prefix from MSB of integer → needs HBo) */
     ar->field[ACL_FIELD_SRC_IP].value.u32     = r->src_ip;
     ar->field[ACL_FIELD_SRC_IP].mask_range.u8 = mask_to_prefix(r->src_mask);
 
-    /* dst_ip — NBO, MASK */
+    /* dst_ip — HBo, MASK */
     ar->field[ACL_FIELD_DST_IP].value.u32     = r->dst_ip;
     ar->field[ACL_FIELD_DST_IP].mask_range.u8 = mask_to_prefix(r->dst_mask);
 

@@ -43,12 +43,12 @@ parse_cidr(const char *s, uint32_t *ip_out, uint32_t *mask_out)
     if (inet_pton(AF_INET, buf, &addr) != 1)
         return -1;
 
-    *ip_out = addr.s_addr;   /* network byte order */
+    *ip_out = ntohl(addr.s_addr);   /* host byte order — rte_acl MASK requires HBo */
 
     if (prefix == 0)
         *mask_out = 0;
     else
-        *mask_out = htonl(~((1u << (32 - prefix)) - 1));
+        *mask_out = ~((1u << (32 - prefix)) - 1);  /* HBo mask: 0xFFFFFF00 for /24 */
 
     return 0;
 }
