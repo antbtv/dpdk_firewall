@@ -287,6 +287,9 @@ rule_match(struct pkt_meta *m, uint32_t *rule_id_out)
 
     rte_rwlock_read_unlock(&g_acl_rwlock);
 
+    RTE_LOG_FW_DEBUG("rule_match: src=%08x proto=%u result=%u\n",
+                     m->src_ip, m->proto, result);
+
     if (result == 0) {
         /* No rule matched: apply default policy */
         if (rule_id_out)
