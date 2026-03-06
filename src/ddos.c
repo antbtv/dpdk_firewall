@@ -151,7 +151,13 @@ ddos_update(uint32_t src_ip, struct pkt_meta *m, uint64_t now_ns)
         e->syn_count  = 0;
         e->udp_count  = 0;
         e->icmp_count = 0;
-        RTE_LOG_FW_INFO("ddos: auto-blacklisted %08x\n", src_ip);
+        /*
+         * src_ip is in host byte order on LE ARM: LSB = first IP octet.
+         * Extract bytes manually to print correct dotted-decimal.
+         */
+        RTE_LOG_FW_INFO("ddos: auto-blacklisted %u.%u.%u.%u\n",
+                        src_ip & 0xff, (src_ip >> 8) & 0xff,
+                        (src_ip >> 16) & 0xff, (src_ip >> 24) & 0xff);
     }
 }
 
