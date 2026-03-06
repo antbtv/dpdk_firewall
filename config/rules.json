@@ -59,7 +59,7 @@
     },
     {
       "id": 5,
-      "priority": 50,
+      "priority": 0,
       "comment": "P2-05 test: block TCP port 12345",
       "proto": "tcp",
       "dst_port": "12345",
