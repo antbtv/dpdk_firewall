@@ -241,11 +241,10 @@ main(void)
      */
     static char arg0[] = "test_rule_engine";
     static char arg1[] = "--no-pci";
-    static char arg2[] = "--log-level=0";
-    static char arg3[] = "-m";
-    static char arg4[] = "64";
-    char *eal_argv[] = { arg0, arg1, arg2, arg3, arg4 };
-    int   eal_argc   = 5;
+    static char arg2[] = "-m";
+    static char arg3[] = "64";
+    char *eal_argv[] = { arg0, arg1, arg2, arg3 };
+    int   eal_argc   = 4;
 
     if (rte_eal_init(eal_argc, eal_argv) < 0) {
         fprintf(stderr, "rte_eal_init failed\n");
