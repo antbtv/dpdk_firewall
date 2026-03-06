@@ -103,7 +103,7 @@ ddos_init(const struct ddos_config *cfg)
                     cfg->enabled, cfg->window_ns,
                     cfg->syn_threshold, cfg->udp_threshold,
                     cfg->icmp_threshold,
-                    cfg->block_duration_ns / 1000000000ULL);
+                    cfg->block_duration_ns / (uint64_t)1000000000);
 }
 
 /* ─── P3-01: DDoS sliding-window update ─────────────────────────────────── */
