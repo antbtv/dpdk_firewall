@@ -15,6 +15,7 @@
 #include "port.h"
 #include "pipeline.h"
 #include "rule_engine.h"
+#include "ddos.h"
 #include "stats.h"
 #include "mgmt.h"
 #include "log.h"
@@ -284,6 +285,9 @@ main(int argc, char *argv[])
 
     if (rule_engine_init() != 0)
         rte_exit(EXIT_FAILURE, "rule_engine_init failed\n");
+
+    ddos_init(&g_fw_config.ddos_cfg);
+    meter_init_all();
 
     /* ── Step 9: Install signal handlers ────────────────────────────────── */
     struct sigaction sa_quit = { .sa_handler = handle_sigint,  .sa_flags = 0 };

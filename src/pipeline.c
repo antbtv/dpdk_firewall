@@ -7,20 +7,23 @@
 #include <rte_tcp.h>
 #include <rte_udp.h>
 #include <rte_icmp.h>
+#include <rte_cycles.h>
+#include <rte_meter.h>
 
 #include "pipeline.h"
 #include "firewall.h"
 #include "rule_engine.h"
+#include "ddos.h"
 #include "log.h"
 
 /*
  * Packet pipeline (7 stages per burst of MAX_BURST=32 packets):
  *  1. RX BURST         — implemented
  *  2. CLASSIFIER       — implemented (P2-02)
- *  3. BLACKLIST CHECK  — TODO: P3-03
+ *  3. BLACKLIST CHECK  — implemented (P3-03)
  *  4. RULE ENGINE      — implemented (P2-03)
- *  5. RATE LIMIT       — TODO: P3-02
- *  6. DDOS UPDATE      — TODO: P3-03
+ *  5. RATE LIMIT       — implemented (P3-02)
+ *  6. DDOS UPDATE      — implemented (P3-03)
  *  7. TX BURST         — implemented
  */
 
@@ -95,6 +98,9 @@ pipeline_lcore_main(void *arg)
     struct rte_mbuf *tx_pkts[MAX_BURST];
     struct pkt_meta  meta[MAX_BURST];
 
+    /* Precompute nanoseconds-per-cycle for TSC→ns conversion (stage 6) */
+    const double ns_per_cycle = 1e9 / (double)rte_get_tsc_hz();
+
     while (!g_force_quit) {
 
         /* ── Stage 1: RX BURST ─────────────────────────────────────────── */
@@ -109,6 +115,10 @@ pipeline_lcore_main(void *arg)
             classify_pkt(rx_pkts[i], &meta[i]);
         }
 
+        /* Snapshot time once per burst — shared by stages 3, 5, 6 */
+        uint64_t now_cycles = rte_get_tsc_cycles();
+        uint64_t now_ns     = (uint64_t)((double)now_cycles * ns_per_cycle);
+
         /* ── Stages 3-6 → Stage 7 ──────────────────────────────────────── */
         uint16_t n_tx = 0;
 
@@ -120,7 +130,11 @@ pipeline_lcore_main(void *arg)
                 continue;
             }
 
-            /* TODO P3-03: Stage 3 — BLACKLIST CHECK */
+            /* ── Stage 3: BLACKLIST CHECK ──────────────────────────────── */
+            if (blacklist_check(meta[i].src_ip, now_cycles)) {
+                rte_pktmbuf_free(rx_pkts[i]);
+                continue;
+            }
 
             /* ── Stage 4: RULE ENGINE ──────────────────────────────────── */
             uint32_t rule_id;
@@ -132,11 +146,18 @@ pipeline_lcore_main(void *arg)
                 continue;
             }
 
-            /* ACTION_ACCEPT or ACTION_RATE_LIMIT */
-            /* TODO P3-02: Stage 5 — RATE LIMIT (drop if RED) */
+            /* ── Stage 5: RATE LIMIT ────────────────────────────────────── */
+            if (action == ACTION_RATE_LIMIT &&
+                meter_check(rule_id, rx_pkts[i]->pkt_len, now_cycles)
+                    == RTE_COLOR_RED) {
+                rte_pktmbuf_free(rx_pkts[i]);
+                continue;
+            }
+
+            /* ── Stage 6: DDOS UPDATE ───────────────────────────────────── */
+            ddos_update(meta[i].src_ip, &meta[i], now_ns);
 
             tx_pkts[n_tx++] = rx_pkts[i];
-            /* TODO P3-03: Stage 6 — DDOS UPDATE */
         }
 
         /* ── Stage 7: TX BURST ─────────────────────────────────────────── */

@@ -56,14 +56,6 @@
       "comment": "Разрешить тестовую сеть 10.99.0.0/24",
       "src_ip": "10.99.0.0/24",
       "action": "accept"
-    },
-    {
-      "id": 5,
-      "priority": 0,
-      "comment": "P2-05 test: block TCP port 12345",
-      "proto": "tcp",
-      "dst_port": "12345",
-      "action": "drop"
     }
   ]
 }
