@@ -12,10 +12,10 @@
   "ddos": {
     "enabled": true,
     "window_ms": 100,
-    "syn_pps_threshold": 100,
-    "udp_pps_threshold": 500,
-    "icmp_pps_threshold": 100,
-    "block_duration_s": 15
+    "syn_pps_threshold": 10000,
+    "udp_pps_threshold": 50000,
+    "icmp_pps_threshold": 5000,
+    "block_duration_s": 300
   },
   "logging": {
     "level": "info",

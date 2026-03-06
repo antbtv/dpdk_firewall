@@ -156,8 +156,8 @@ ddos_update(uint32_t src_ip, struct pkt_meta *m, uint64_t now_ns)
          * Extract bytes manually to print correct dotted-decimal.
          */
         RTE_LOG_FW_INFO("ddos: auto-blacklisted %u.%u.%u.%u\n",
-                        src_ip & 0xff, (src_ip >> 8) & 0xff,
-                        (src_ip >> 16) & 0xff, (src_ip >> 24) & 0xff);
+                        (src_ip >> 24) & 0xff, (src_ip >> 16) & 0xff,
+                        (src_ip >> 8) & 0xff, src_ip & 0xff);
     }
 }
 
