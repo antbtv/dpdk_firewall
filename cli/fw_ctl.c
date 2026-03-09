@@ -29,6 +29,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
+#include <stdint.h>
 #include <jansson.h>
 
 #define SOCK_PATH   "/var/run/dpdk_firewall/mgmt.sock"
