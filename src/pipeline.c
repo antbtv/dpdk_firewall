@@ -14,6 +14,7 @@
 #include "firewall.h"
 #include "rule_engine.h"
 #include "ddos.h"
+#include "stats.h"
 #include "log.h"
 
 /*
@@ -108,11 +109,12 @@ pipeline_lcore_main(void *arg)
         if (n == 0)
             continue;
 
-        /* ── Stage 2: CLASSIFIER ───────────────────────────────────────── */
+        /* ── Stage 2: CLASSIFIER + RX stats ───────────────────────────── */
         for (uint16_t i = 0; i < n; i++) {
             if (i + 1 < n)
                 rte_prefetch0(rte_pktmbuf_mtod(rx_pkts[i + 1], void *));
             classify_pkt(rx_pkts[i], &meta[i]);
+            stats_inc_rx(rx_pkts[i]->pkt_len);
         }
 
         /* Snapshot time once per burst — shared by stages 3, 5, 6 */
@@ -133,6 +135,7 @@ pipeline_lcore_main(void *arg)
             /* ── Stage 3: BLACKLIST CHECK ──────────────────────────────── */
             if (blacklist_check(meta[i].src_ip, now_cycles)) {
                 rte_pktmbuf_free(rx_pkts[i]);
+                stats_inc_dropped();
                 continue;
             }
 
@@ -142,7 +145,7 @@ pipeline_lcore_main(void *arg)
 
             if (action == ACTION_DROP) {
                 rte_pktmbuf_free(rx_pkts[i]);
-                /* TODO P4-01: stats_inc_dropped() */
+                stats_inc_dropped();
                 continue;
             }
 
@@ -151,6 +154,7 @@ pipeline_lcore_main(void *arg)
                 meter_check(rule_id, rx_pkts[i]->pkt_len, now_cycles)
                     == RTE_COLOR_RED) {
                 rte_pktmbuf_free(rx_pkts[i]);
+                stats_inc_dropped();
                 continue;
             }
 
@@ -166,10 +170,16 @@ pipeline_lcore_main(void *arg)
 
         uint16_t sent = rte_eth_tx_burst(port_out, 0, tx_pkts, n_tx);
 
+        /* Account for transmitted packets */
+        for (uint16_t i = 0; i < sent; i++)
+            stats_inc_tx(tx_pkts[i]->pkt_len);
+
         /* Free packets the TX queue could not accept */
         if (unlikely(sent < n_tx)) {
-            for (uint16_t i = sent; i < n_tx; i++)
+            for (uint16_t i = sent; i < n_tx; i++) {
+                stats_inc_dropped();
                 rte_pktmbuf_free(tx_pkts[i]);
+            }
         }
     }
 

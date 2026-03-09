@@ -11,8 +11,12 @@
 #include "firewall.h"
 #include "log.h"
 
-/* Rule engine rebuild — forward declaration; implemented in rule_engine.c */
-extern int rule_engine_rebuild(void);
+/*
+ * Forward declaration: sync rule_engine's internal copy from g_fw_config,
+ * then rebuild the ACL context.  Defined in rule_engine.c.
+ * Using a forward declaration (not a header include) to avoid circular deps.
+ */
+extern int rule_engine_reload_from_config(void);
 
 /* ─── Global configuration instance ────────────────────────────────────── */
 
@@ -402,8 +406,8 @@ config_reload(void)
     g_fw_config = new_cfg;
     g_default_policy = g_fw_config.default_policy;
 
-    /* Rebuild ACL context from new rules */
-    int rc = rule_engine_rebuild();
+    /* Sync rule_engine's internal g_rules[] from the new config and rebuild ACL */
+    int rc = rule_engine_reload_from_config();
     if (rc != 0)
         RTE_LOG_FW_WARN("rule_engine_rebuild() returned %d after reload\n", rc);
 

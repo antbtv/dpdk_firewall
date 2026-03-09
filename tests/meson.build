@@ -27,7 +27,7 @@ test_ddos = executable('test_ddos',
 )
 test('ddos', test_ddos)
 
-# test_config — includes rule_engine.c because config.c calls rule_engine_rebuild()
+# test_config — includes rule_engine.c because config_reload() calls rule_engine_reload_from_config()
 test_config = executable('test_config',
   sources : [
     files('test_config.c'),

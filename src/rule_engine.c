@@ -382,6 +382,39 @@ rule_del(uint32_t id)
 }
 
 int
+rule_engine_reload_from_config(void)
+{
+    /*
+     * Sync the rule_engine's internal g_rules[] from the global config.
+     * Called by config_reload() after the config file is re-parsed into
+     * g_fw_config.  Dynamic rules added via rule_add/del are discarded here
+     * (they are not persisted to the config file).
+     */
+    g_n_rules = g_fw_config.n_rules;
+    if (g_n_rules > MAX_RULES)
+        g_n_rules = MAX_RULES;
+
+    memcpy(g_rules, g_fw_config.rules, g_n_rules * sizeof(struct fw_rule));
+
+    /* Keep g_next_id above the highest config-file ID to avoid reuse */
+    for (uint32_t i = 0; i < g_n_rules; i++) {
+        if (g_rules[i].id > g_next_id)
+            g_next_id = g_rules[i].id;
+    }
+
+    RTE_LOG_FW_INFO("rule_engine: synced %u rule(s) from config\n", g_n_rules);
+    return rule_engine_rebuild();
+}
+
+int
+rule_flush(void)
+{
+    g_n_rules = 0;
+    RTE_LOG_FW_INFO("rule_engine: all rules flushed\n");
+    return rule_engine_rebuild();
+}
+
+int
 rule_list(struct fw_rule *out, uint32_t *n_out)
 {
     if (out == NULL || n_out == NULL)
