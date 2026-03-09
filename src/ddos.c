@@ -218,8 +218,9 @@ blacklist_list(uint32_t *ips_out, uint64_t *expires_out, uint32_t *n_out)
     uint64_t    now   = rte_get_tsc_cycles();
     uint32_t    iter  = 0;
     const void *key;
+    void       *val;   /* rte_hash_iterate requires non-NULL data ptr */
 
-    while (rte_hash_iterate(g_blacklist_hash, &key, NULL, &iter) >= 0) {
+    while (rte_hash_iterate(g_blacklist_hash, &key, &val, &iter) >= 0) {
         uint32_t ip = *(const uint32_t *)key;
 
         int32_t pos = rte_hash_lookup(g_blacklist_hash, &ip);
