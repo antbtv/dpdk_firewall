@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "mode": "bridge",
+  "ports": {
+    "wan": "enP1p1s0",
+    "lan": "builtin"
+  },
+  "default_policy": "accept",
+  "hugepages": {
+    "size_mb": 1024
+  },
+  "ddos": {
+    "enabled": false,
+    "window_ms": 100,
+    "syn_pps_threshold": 10000,
+    "udp_pps_threshold": 50000,
+    "icmp_pps_threshold": 5000,
+    "block_duration_s": 300
+  },
+  "logging": {
+    "level": "info",
+    "file": "/var/log/dpdk_firewall.log"
+  },
+  "rules": [
+    { "id": 1,  "priority": 1,   "src_ip": "10.99.0.0/24",   "action": "accept", "comment": "allow test subnet" },
+    { "id": 2,  "priority": 100, "src_ip": "172.16.1.0/24",  "action": "drop" },
+    { "id": 3,  "priority": 101, "src_ip": "172.16.2.0/24",  "action": "drop" },
+    { "id": 4,  "priority": 102, "src_ip": "172.16.3.0/24",  "action": "drop" },
+    { "id": 5,  "priority": 103, "src_ip": "172.16.4.0/24",  "action": "drop" },
+    { "id": 6,  "priority": 104, "src_ip": "172.16.5.0/24",  "action": "drop" },
+    { "id": 7,  "priority": 105, "src_ip": "172.16.6.0/24",  "action": "drop" },
+    { "id": 8,  "priority": 106, "src_ip": "172.16.7.0/24",  "action": "drop" },
+    { "id": 9,  "priority": 107, "src_ip": "172.16.8.0/24",  "action": "drop" },
+    { "id": 10, "priority": 108, "src_ip": "172.16.9.0/24",  "action": "drop" }
+  ]
+}
