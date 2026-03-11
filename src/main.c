@@ -235,7 +235,7 @@ main(int argc, char *argv[])
          * address offset).  Keep the NIC under the kernel igb driver and
          * reach it via AF_PACKET sockets — no rebinding needed. */
         snprintf(vdev_arg, sizeof(vdev_arg),
-                 "eth_af_packet%d,iface=%s", vdev_idx++, wan_iface);
+                 "net_af_xdp0,iface=%s,force_copy=1", wan_iface);
         EAL_PUSH("--vdev"); EAL_PUSH(vdev_arg);
     }
 
