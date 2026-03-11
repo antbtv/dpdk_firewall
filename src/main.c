@@ -248,7 +248,7 @@ main(int argc, char *argv[])
          * address offset).  Keep the NIC under the kernel igb driver and
          * reach it via AF_PACKET sockets — no rebinding needed. */
         snprintf(vdev_arg, sizeof(vdev_arg),
-                 "eth_af_packet%d,iface=%s,framecnt=%d,qdisc_bypass=1",
+                 "eth_af_packet%d,iface=%s,framecnt=%d",
                  vdev_idx++, wan_iface, AF_PACKET_FRAMECNT);
         EAL_PUSH("--vdev"); EAL_PUSH(vdev_arg);
     }
@@ -258,7 +258,7 @@ main(int argc, char *argv[])
         EAL_PUSH("--allow"); EAL_PUSH(lan_pci);
     } else if (lan_iface[0]) {
         snprintf(vdev_arg, sizeof(vdev_arg),
-                 "eth_af_packet%d,iface=%s,framecnt=%d,qdisc_bypass=1",
+                 "eth_af_packet%d,iface=%s,framecnt=%d",
                  vdev_idx++, lan_iface, AF_PACKET_FRAMECNT);
         EAL_PUSH("--vdev"); EAL_PUSH(vdev_arg);
     }
