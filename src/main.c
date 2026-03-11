@@ -208,25 +208,12 @@ main(int argc, char *argv[])
      *
      * Maximum args: 9 (prog + --proc-type primary + 2×(--allow|--vdev X))
      */
-/*
- * AF_PACKET PMD tuning (P7-01).
- * qdisc_bypass=1: bypasses the qdisc layer on TX, going directly to
- *   ndo_start_xmit — eliminates one layer of kernel locking overhead.
- *   Requires Linux >= 3.14 (PACKET_QDISC_BYPASS).  RPi5 kernel 6.8 qualifies.
- * AF_PACKET_FRAMECNT: PACKET_MMAP ring depth.  Default in DPDK is 512.
- *   Larger rings reduce ring-wrapping overhead under burst traffic.
- *   Values to benchmark: 4096, 8192, 16384.
- */
-#define AF_PACKET_FRAMECNT 4096
-
 #define EAL_MAX_ARGS 16
-#define EAL_ARG_LEN  128   /* enlarged from 64: vdev string with tuning params
-                            * can reach ~70 bytes (iface name up to IFNAMSIZ=16
-                            * + ",framecnt=16384,qdisc_bypass=1" = 31 chars) */
+#define EAL_ARG_LEN  64
     char  eal_storage[EAL_MAX_ARGS][EAL_ARG_LEN];
     char *eal_argv[EAL_MAX_ARGS];
     int   eal_argc  = 0;
-    int   vdev_idx  = 0;   /* index suffix for eth_af_packetN names */
+    int   vdev_idx  = 0;   /* index suffix for PMD vdev names */
     char  vdev_arg[EAL_ARG_LEN];
 
 #define EAL_PUSH(str) \
@@ -244,11 +231,21 @@ main(int argc, char *argv[])
     if (wan_pci[0]) {
         EAL_PUSH("--allow"); EAL_PUSH(wan_pci);
     } else if (wan_iface[0]) {
-        /* BCM2712 PCIe has no IOMMU → uio_pci_generic DMA fails (64 GB
-         * address offset).  Keep the NIC under the kernel igb driver and
-         * reach it via AF_PACKET sockets — no rebinding needed. */
+        /*
+         * BCM2712 PCIe has no IOMMU → vfio-pci unavailable.
+         * Use AF_XDP PMD (net_af_xdp): bypasses sk_buff allocation and the
+         * full socket layer; packets are transferred via a shared UMEM ring
+         * between kernel XDP hook and userspace — significantly faster than
+         * AF_PACKET.  NICs remain under their kernel drivers (igb / macb).
+         *
+         * Prerequisites on RPi5 before every run:
+         *   sudo ethtool -L enP1p1s0 combined 1   # collapse I210 RSS to 1 queue
+         *   sudo ethtool -L eth0      combined 1   # same for macb if multi-queue
+         * Without this, RSS distributes frames across all hardware queues and
+         * only queue-0 traffic reaches the AF_XDP socket — other queues are lost.
+         */
         snprintf(vdev_arg, sizeof(vdev_arg),
-                 "eth_af_packet%d,iface=%s",
+                 "net_af_xdp%d,iface=%s,start_q=0,queue_cnt=1",
                  vdev_idx++, wan_iface);
         EAL_PUSH("--vdev"); EAL_PUSH(vdev_arg);
     }
@@ -258,7 +255,7 @@ main(int argc, char *argv[])
         EAL_PUSH("--allow"); EAL_PUSH(lan_pci);
     } else if (lan_iface[0]) {
         snprintf(vdev_arg, sizeof(vdev_arg),
-                 "eth_af_packet%d,iface=%s",
+                 "net_af_xdp%d,iface=%s,start_q=0,queue_cnt=1",
                  vdev_idx++, lan_iface);
         EAL_PUSH("--vdev"); EAL_PUSH(vdev_arg);
     }

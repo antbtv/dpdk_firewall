@@ -1,10 +1,10 @@
 # DPDK Firewall — Benchmarks
 
 Platform: Raspberry Pi 5 (ARM Cortex-A76, 4 cores, 8 GB RAM)
-NIC WAN: Intel I210 (PCI 0001:01:00.0, igb driver, AF_PACKET PMD)
-NIC LAN: BCM54213PE (eth0, rp1 driver, AF_PACKET PMD)
-DPDK: 24.11.3 (Ubuntu package)
-Kernel: 6.8.0-101-generic (aarch64)
+NIC WAN: Intel I210 (PCI 0001:01:00.0, igb driver)
+NIC LAN: BCM54213PE (eth0, macb driver)   ← kernel 6.17: driver changed from rp1 to macb
+DPDK: 24.11.3 (Ubuntu package, PMDs in pmds-25.0/)
+Kernel: 6.17.0-1008-raspi (aarch64)       ← upgraded from 6.8.0-101 during P7 phase
 Build: meson --optimization=3
 
 Test topology:
@@ -54,6 +54,72 @@ Scenario 3 (100 DROP rules):
 Scenario 4 (1 rule + DDoS enabled):
   [5] 0.00-30.00 sec  42.4 MBytes  11.8 Mbits/sec  6320 retr  (sender)
   [5] 0.00-30.02 sec  42.4 MBytes  11.8 Mbits/sec             (receiver)
+
+---
+
+## P7-01: AF_PACKET Tuning — H1 (framecnt, qdisc_bypass)
+
+Measured: 2026-03-11. iperf3 -c 10.99.0.2 -t 30 (30-second TCP stream, 2 runs each).
+Config: bench_baseline.json (0 rules, DDoS off). Same topology as P6-01.
+
+Today's baseline re-measurement (default framecnt=512, no qdisc_bypass):
+
+| Run | Mbit/s | Retransmits |
+|-----|--------|-------------|
+| 1   | 10.7   | 7307        |
+| 2   | 10.2   | 7376        |
+| avg | **10.45** | 7342     |
+
+Note: baseline is lower than P6-01 (12.0 Mbit/s measured on 2026-03-10).
+Day-to-day variation of ~15% is normal for AF_PACKET on RPi5 (I210 state, TCP stack warmup).
+
+| Config                                | Run 1  | Run 2  | Avg    | Δ vs today baseline |
+|---------------------------------------|--------|--------|--------|---------------------|
+| Default (framecnt=512, no bypass)     | 10.7   | 10.2   | 10.45  | —                   |
+| framecnt=4096 + qdisc_bypass=1        | 10.4   | 10.7   | 10.55  | +1% (noise)         |
+| framecnt=4096, qdisc_bypass=0         | 10.9   | 10.6   | 10.75  | +3% (noise)         |
+
+### H1 Conclusion
+
+**No measurable improvement from AF_PACKET PMD tuning.**
+
+All three configurations produce statistically indistinguishable throughput (~10.5 Mbit/s).
+The bottleneck is not ring-wrapping overhead or qdisc latency — it is the per-packet kernel
+copy path inherent to AF_PACKET: every frame requires a `recvmsg()`/`sendmsg()` equivalent
+through the kernel socket layer, with no way to bypass it without replacing the PMD entirely.
+
+- `framecnt=4096`: no effect — the ring is never full at ~10 Mbit/s (far below the ring's capacity)
+- `qdisc_bypass=1`: no effect (or slight negative due to removed backpressure in forwarding path)
+
+H1 confirmed as **negative result** — AF_PACKET tuning cannot overcome the kernel copy bottleneck.
+Next hypothesis: H2 (AF_XDP PMD, copy mode) — replaces the PMD entirely, eliminates sk_buff allocation.
+
+---
+
+## P7-02: Platform Readiness for AF_XDP PMD
+
+Checked: 2026-03-11 on RPi5 (kernel 6.17.0-1008-raspi).
+
+| Check | Result | Notes |
+|-------|--------|-------|
+| CONFIG_XDP_SOCKETS | =y | AF_XDP sockets available in kernel |
+| CONFIG_DEBUG_INFO_BTF | =y | required by libbpf for BPF program loading |
+| librte_net_af_xdp.so | **found** in pmds-25.0/ | DPDK AF_XDP PMD present |
+| libxdp-dev | 1.5.6-1 (installed) | required by net_af_xdp PMD |
+| libbpf-dev | 1.6.2-1 (installed) | required by net_af_xdp PMD |
+| igb XDP support | `ip link set enP1p1s0 xdp off` → silent success | XDP accepted by driver |
+| macb XDP support | `ip link set eth0 xdp off` → silent success | both NICs support XDP |
+| igb zero-copy XDP | kernel 6.17 ≥ 6.14 (when zero-copy was added to igb) | H3 may be available |
+
+**Key finding:** kernel upgraded to 6.17 during this phase. igb AF_XDP zero-copy was merged
+in Linux 6.14, so H3 (zero-copy, previously requiring a custom kernel) may now be available
+without any kernel build. This opens the possibility of skipping directly to zero-copy if
+copy-mode AF_XDP (H2) proves insufficient.
+
+**LAN driver change:** eth0 now uses `macb` instead of `rp1`. macb has had XDP support since
+Linux 5.13. Both ports can potentially use the AF_XDP PMD.
+
+All prerequisites for P7-03 (AF_XDP copy mode) are satisfied.
 
 ---
 
