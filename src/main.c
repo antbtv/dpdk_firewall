@@ -245,7 +245,7 @@ main(int argc, char *argv[])
          * only queue-0 traffic reaches the AF_XDP socket — other queues are lost.
          */
         snprintf(vdev_arg, sizeof(vdev_arg),
-                 "net_af_xdp%d,iface=%s,start_q=0,queue_cnt=1",
+                 "net_af_xdp%d,iface=%s",
                  vdev_idx++, wan_iface);
         EAL_PUSH("--vdev"); EAL_PUSH(vdev_arg);
     }
@@ -255,7 +255,7 @@ main(int argc, char *argv[])
         EAL_PUSH("--allow"); EAL_PUSH(lan_pci);
     } else if (lan_iface[0]) {
         snprintf(vdev_arg, sizeof(vdev_arg),
-                 "net_af_xdp%d,iface=%s,start_q=0,queue_cnt=1",
+                 "net_af_xdp%d,iface=%s",
                  vdev_idx++, lan_iface);
         EAL_PUSH("--vdev"); EAL_PUSH(vdev_arg);
     }
