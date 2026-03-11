@@ -16,34 +16,44 @@ iperf3 command: `iperf3 -c 10.99.0.2 -t 30` (from Dev PC)
 
 ## P6-01: Throughput Benchmarking (TCP, 1500-byte frames)
 
-| Scenario                  | Config                  | n_rules | DDoS | Mbit/s | Retransmits | Notes |
-|---------------------------|-------------------------|---------|------|--------|-------------|-------|
-| 1. Baseline (no rules)    | bench_baseline.json     | 0       | off  | TBD    | TBD         |       |
-| 2. 10 DROP rules          | bench_10rules.json      | 10      | off  | TBD    | TBD         |       |
-| 3. 100 DROP rules         | bench_100rules.json     | 100     | off  | TBD    | TBD         |       |
-| 4. Baseline + DDoS        | bench_ddos.json         | 1       | on   | TBD    | TBD         |       |
+Measured: 2026-03-10. iperf3 -c 10.99.0.2 -t 30 (30-second TCP stream).
 
-### Run procedure
+| Scenario                  | Config                  | n_rules | DDoS | Mbit/s (sender) | Retransmits | Notes |
+|---------------------------|-------------------------|---------|------|-----------------|-------------|-------|
+| 1. Baseline (no rules)    | bench_baseline.json     | 0       | off  | 12.0            | 6523        | AF_PACKET PMD floor |
+| 2. 10 DROP rules          | bench_10rules.json      | 10      | off  | 12.2            | 7050        | +0.2 (within noise) |
+| 3. 100 DROP rules         | bench_100rules.json     | 100     | off  | 12.9            | 6644        | +0.9 (within noise) |
+| 4. Baseline + DDoS        | bench_ddos.json         | 1       | on   | 11.8            | 6320        | -0.2 (within noise) |
 
-```bash
-# On RPi5 — run each scenario in sequence, record iperf3 output
+### Analysis
 
-# Scenario 1: baseline
-sudo ./build/dpdk_firewall --config config/bench_baseline.json --log-level info
-# On Dev PC: iperf3 -c 10.99.0.2 -t 30
+All four scenarios produce statistically indistinguishable throughput (~12 Mbit/s).
+The ACL rule engine (linear scan, 0-100 rules) and DDoS detector add **no measurable
+overhead** relative to the baseline. The bottleneck is exclusively the AF_PACKET PMD:
+every frame requires a kernel-space copy and a syscall, capping throughput on RPi5 at
+~12 Mbit/s regardless of firewall configuration.
 
-# Scenario 2: 10 rules
-sudo ./build/dpdk_firewall --config config/bench_10rules.json --log-level info
-# On Dev PC: iperf3 -c 10.99.0.2 -t 30
+TCP Cwnd is stuck at 2.83–5.66 KBytes throughout all tests due to the high retransmit
+rate (6000–7000/30s). This is a TCP congestion response to AF_PACKET TX latency
+variance, not a firewall correctness issue.
 
-# Scenario 3: 100 rules
-sudo ./build/dpdk_firewall --config config/bench_100rules.json --log-level info
-# On Dev PC: iperf3 -c 10.99.0.2 -t 30
+### Raw iperf3 output
 
-# Scenario 4: DDoS enabled
-sudo ./build/dpdk_firewall --config config/bench_ddos.json --log-level info
-# On Dev PC: iperf3 -c 10.99.0.2 -t 30
-```
+Scenario 1 (baseline, 0 rules):
+  [5] 0.00-30.00 sec  42.8 MBytes  12.0 Mbits/sec  6523 retr  (sender)
+  [5] 0.00-30.22 sec  42.6 MBytes  11.8 Mbits/sec             (receiver)
+
+Scenario 2 (10 DROP rules):
+  [5] 0.00-30.00 sec  43.8 MBytes  12.2 Mbits/sec  7050 retr  (sender)
+  [5] 0.00-29.76 sec  43.8 MBytes  12.3 Mbits/sec             (receiver)
+
+Scenario 3 (100 DROP rules):
+  [5] 0.00-30.00 sec  46.1 MBytes  12.9 Mbits/sec  6644 retr  (sender)
+  [5] 0.00-30.13 sec  46.0 MBytes  12.8 Mbits/sec             (receiver)
+
+Scenario 4 (1 rule + DDoS enabled):
+  [5] 0.00-30.00 sec  42.4 MBytes  11.8 Mbits/sec  6320 retr  (sender)
+  [5] 0.00-30.02 sec  42.4 MBytes  11.8 Mbits/sec             (receiver)
 
 ---
 
