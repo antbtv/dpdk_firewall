@@ -231,21 +231,11 @@ main(int argc, char *argv[])
     if (wan_pci[0]) {
         EAL_PUSH("--allow"); EAL_PUSH(wan_pci);
     } else if (wan_iface[0]) {
-        /*
-         * BCM2712 PCIe has no IOMMU → vfio-pci unavailable.
-         * Use AF_XDP PMD (net_af_xdp): bypasses sk_buff allocation and the
-         * full socket layer; packets are transferred via a shared UMEM ring
-         * between kernel XDP hook and userspace — significantly faster than
-         * AF_PACKET.  NICs remain under their kernel drivers (igb / macb).
-         *
-         * Prerequisites on RPi5 before every run:
-         *   sudo ethtool -L enP1p1s0 combined 1   # collapse I210 RSS to 1 queue
-         *   sudo ethtool -L eth0      combined 1   # same for macb if multi-queue
-         * Without this, RSS distributes frames across all hardware queues and
-         * only queue-0 traffic reaches the AF_XDP socket — other queues are lost.
-         */
+        /* BCM2712 PCIe has no IOMMU → uio_pci_generic DMA fails (64 GB
+         * address offset).  Keep the NIC under the kernel igb driver and
+         * reach it via AF_PACKET sockets — no rebinding needed. */
         snprintf(vdev_arg, sizeof(vdev_arg),
-                 "eth_af_packet0,iface=%s", wan_iface);
+                 "eth_af_packet%d,iface=%s", vdev_idx++, wan_iface);
         EAL_PUSH("--vdev"); EAL_PUSH(vdev_arg);
     }
 
@@ -253,15 +243,8 @@ main(int argc, char *argv[])
     if (lan_pci[0]) {
         EAL_PUSH("--allow"); EAL_PUSH(lan_pci);
     } else if (lan_iface[0]) {
-        /*
-         * LAN: macb driver does not support XDP native mode (confirmed on
-         * kernel 6.17 — "Underlying driver does not support XDP in native
-         * mode").  Fall back to AF_PACKET PMD for the LAN port.
-         * WAN (AF_XDP) handles the critical ingress path; LAN (AF_PACKET)
-         * handles the egress path and ACK ingress from the local network.
-         */
         snprintf(vdev_arg, sizeof(vdev_arg),
-                 "eth_af_packet0,iface=%s", lan_iface);
+                 "eth_af_packet%d,iface=%s", vdev_idx++, lan_iface);
         EAL_PUSH("--vdev"); EAL_PUSH(vdev_arg);
     }
 
