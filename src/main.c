@@ -244,12 +244,8 @@ main(int argc, char *argv[])
          * Without this, RSS distributes frames across all hardware queues and
          * only queue-0 traffic reaches the AF_XDP socket — other queues are lost.
          */
-        /*
-         * WAN: AF_XDP native mode (igb supports XDP since Linux 5.9,
-         * zero-copy since Linux 6.14 — kernel 6.17 qualifies).
-         */
         snprintf(vdev_arg, sizeof(vdev_arg),
-                 "net_af_xdp0,iface=%s", wan_iface);
+                 "eth_af_packet0,iface=%s", wan_iface);
         EAL_PUSH("--vdev"); EAL_PUSH(vdev_arg);
     }
 
