@@ -244,9 +244,12 @@ main(int argc, char *argv[])
          * Without this, RSS distributes frames across all hardware queues and
          * only queue-0 traffic reaches the AF_XDP socket — other queues are lost.
          */
+        /*
+         * WAN: AF_XDP native mode (igb supports XDP since Linux 5.9,
+         * zero-copy since Linux 6.14 — kernel 6.17 qualifies).
+         */
         snprintf(vdev_arg, sizeof(vdev_arg),
-                 "net_af_xdp%d,iface=%s",
-                 vdev_idx++, wan_iface);
+                 "net_af_xdp0,iface=%s", wan_iface);
         EAL_PUSH("--vdev"); EAL_PUSH(vdev_arg);
     }
 
@@ -254,9 +257,15 @@ main(int argc, char *argv[])
     if (lan_pci[0]) {
         EAL_PUSH("--allow"); EAL_PUSH(lan_pci);
     } else if (lan_iface[0]) {
+        /*
+         * LAN: macb driver does not support XDP native mode (confirmed on
+         * kernel 6.17 — "Underlying driver does not support XDP in native
+         * mode").  Fall back to AF_PACKET PMD for the LAN port.
+         * WAN (AF_XDP) handles the critical ingress path; LAN (AF_PACKET)
+         * handles the egress path and ACK ingress from the local network.
+         */
         snprintf(vdev_arg, sizeof(vdev_arg),
-                 "net_af_xdp%d,iface=%s",
-                 vdev_idx++, lan_iface);
+                 "eth_af_packet0,iface=%s", lan_iface);
         EAL_PUSH("--vdev"); EAL_PUSH(vdev_arg);
     }
 
