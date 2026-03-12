@@ -235,7 +235,7 @@ main(int argc, char *argv[])
          * address offset).  Keep the NIC under the kernel igb driver and
          * reach it via AF_PACKET sockets — no rebinding needed. */
         snprintf(vdev_arg, sizeof(vdev_arg),
-                 "net_af_xdp0,iface=%s,force_copy=1", wan_iface);
+                 "net_af_xdp0,iface=%s", wan_iface);
         EAL_PUSH("--vdev"); EAL_PUSH(vdev_arg);
     }
 
@@ -300,16 +300,18 @@ main(int argc, char *argv[])
 
     /* ── Step 10: Launch forwarding lcores ──────────────────────────────── */
     /* lcore 1: WAN (port 0) → LAN (port 1) */
-    s_pipe_args[1].port_in  = 0;
-    s_pipe_args[1].port_out = 1;
+    s_pipe_args[1].port_in      = 0;
+    s_pipe_args[1].port_out     = 1;
+    s_pipe_args[1].src_is_afxdp = (wan_iface[0] != '\0');  /* AF_XDP when WAN is iface */
     ret = rte_eal_remote_launch(pipeline_lcore_main, &s_pipe_args[1], 1);
     if (ret != 0)
         rte_exit(EXIT_FAILURE, "Failed to launch lcore 1: %s\n",
                  rte_strerror(-ret));
 
     /* lcore 2: LAN (port 1) → WAN (port 0) */
-    s_pipe_args[2].port_in  = 1;
-    s_pipe_args[2].port_out = 0;
+    s_pipe_args[2].port_in      = 1;
+    s_pipe_args[2].port_out     = 0;
+    s_pipe_args[2].src_is_afxdp = 0;  /* LAN is AF_PACKET — regular mbufs */
     ret = rte_eal_remote_launch(pipeline_lcore_main, &s_pipe_args[2], 2);
     if (ret != 0)
         rte_exit(EXIT_FAILURE, "Failed to launch lcore 2: %s\n",

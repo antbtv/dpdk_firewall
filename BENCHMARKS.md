@@ -123,6 +123,50 @@ All prerequisites for P7-03 (AF_XDP copy mode) are satisfied.
 
 ---
 
+## P7-03: AF_XDP PMD (copy mode) — H2
+
+Measured: 2026-03-11. WAN=net_af_xdp0 (force_copy=1, native XDP), LAN=eth_af_packet0.
+Config: bench_baseline.json (0 rules, DDoS off). Kernel 6.17.0-1008-raspi.
+
+**Pre-run required:** `sudo ip link set enP1p1s0 xdp off` (clears stale XDP program).
+Without this, old XDP program redirects to dead socket → rx=0, iperf3 hangs.
+
+**`force_copy=1` required for TCP.** Without it, UMEM starvation in mixed-PMD bridge
+mode causes TCP to hang silently (ICMP works, TCP doesn't). force_copy=1 uses kernel
+copy path for UMEM transfers, avoiding the starvation.
+
+| Run | Duration | Mbit/s | Retransmits | Cwnd |
+|-----|----------|--------|-------------|------|
+| 1   | 10s      | **895**| **0**       | 872 KB |
+
+ping latency (AF_XDP active): 0.35ms avg (vs 0.85ms with AF_PACKET)
+
+### Comparison: AF_PACKET vs AF_XDP (force_copy=1)
+
+| Metric             | AF_PACKET (baseline) | AF_XDP force_copy=1 | Improvement |
+|--------------------|----------------------|---------------------|-------------|
+| Throughput         | 10.1 Mbit/s          | **895 Mbit/s**      | **×88**     |
+| Retransmits/10s    | 2333                 | **0**               | —           |
+| TCP Cwnd           | 2.83–4.24 KB         | **778–872 KB**      | ×200        |
+| ping latency (avg) | 0.85 ms              | **0.35 ms**         | ×2.4        |
+
+### H2 Conclusion
+
+**AF_XDP PMD (copy mode) provides ~89× throughput improvement over AF_PACKET.**
+
+895 Mbit/s ≈ 89.5% of the physical 1 Gbit/s link capacity.  The bottleneck shifted from
+the kernel socket layer (AF_PACKET: recvmsg/sendmsg per burst + sk_buff allocation) to the
+physical NIC link itself.  Zero retransmits confirm the forwarding path is stable.
+
+The improvement is achievable because AF_XDP bypasses sk_buff allocation and the full kernel
+socket layer: packets are transferred via a lock-free shared-memory ring (UMEM) between the
+XDP hook in the igb driver and DPDK userspace, with one syscall per batch instead of per packet.
+
+H2 confirmed as **strongly positive result**.
+Next: H3 (AF_XDP zero-copy, igb Linux ≥ 6.14) — may push throughput closer to line rate.
+
+---
+
 ## P6-02: Latency / Jitter (pending)
 
 | Load     | p50 latency | p99 latency | Jitter (p99) |

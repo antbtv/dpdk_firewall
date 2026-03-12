@@ -12,6 +12,7 @@
 
 #include "pipeline.h"
 #include "firewall.h"
+#include "port.h"
 #include "rule_engine.h"
 #include "ddos.h"
 #include "stats.h"
@@ -167,6 +168,35 @@ pipeline_lcore_main(void *arg)
         /* ── Stage 7: TX BURST ─────────────────────────────────────────── */
         if (n_tx == 0)
             continue;
+
+        /*
+         * AF_XDP zero-copy: RX mbufs are backed by UMEM frames.  If we
+         * hand them directly to the AF_PACKET TX port, the PMD copies the
+         * payload to a kernel socket buffer but does NOT return the UMEM
+         * frames to the fill ring → UMEM freelist starves → RX stalls.
+         *
+         * Fix: deep-copy each accepted mbuf to a regular pool buffer, then
+         * free the UMEM-backed original immediately.  Dropped packets (freed
+         * in stages 3-5) already return UMEM frames via rte_pktmbuf_free().
+         * This "selective copy" is cheaper than force_copy=1 which copies
+         * every received packet including those that will be dropped.
+         */
+        if (pa->src_is_afxdp) {
+            uint16_t n_valid = 0;
+            for (uint16_t i = 0; i < n_tx; i++) {
+                struct rte_mbuf *copy = rte_pktmbuf_copy(
+                        tx_pkts[i], g_mbuf_pool, 0, UINT32_MAX);
+                rte_pktmbuf_free(tx_pkts[i]);  /* return UMEM frame now */
+                if (likely(copy != NULL)) {
+                    tx_pkts[n_valid++] = copy;
+                } else {
+                    stats_inc_dropped();
+                }
+            }
+            n_tx = n_valid;
+            if (n_tx == 0)
+                continue;
+        }
 
         uint16_t sent = rte_eth_tx_burst(port_out, 0, tx_pkts, n_tx);
 
