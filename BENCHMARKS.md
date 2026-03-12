@@ -167,6 +167,55 @@ Next: H3 (AF_XDP zero-copy, igb Linux ≥ 6.14) — may push throughput closer t
 
 ---
 
+## P7-04: AF_XDP PMD (zero-copy) — H3
+
+Tested: 2026-03-12. WAN=net_af_xdp0 (no force_copy — zero-copy attempt), LAN=eth_af_packet0.
+Kernel 6.17.0-1008-raspi. igb zero-copy AF_XDP merged in Linux 6.14 → expected to be available.
+
+### Test procedure
+
+Removed `force_copy=1` from WAN vdev string. Set `src_is_afxdp=1` in pipeline_args so pipeline.c
+performs selective deep-copy of forwarded packets (preserving UMEM frame lifecycle).
+
+### Result
+
+| Check | Result |
+|-------|--------|
+| XDP program load | ✓ (prog/xdp id X name xdp_dispatcher jited) |
+| Port start | ✓ (no errors) |
+| ping (ICMP) | ✗ (0 packets received) |
+| iperf3 (TCP) | ✗ (0 packets received) |
+| `ethtool -k enP1p1s0 \| grep xdp` | empty (igb does not advertise xdp-zerocopy feature) |
+| `ethtool -S enP1p1s0` rx_packets | 32 (spurious only) |
+
+### H3 Conclusion
+
+**AF_XDP zero-copy (XSK_ZEROCOPY) does not work on RPi5/BCM2712**, despite kernel 6.17 ≥ 6.14.
+
+Root cause: same BCM2712 PCIe DMA constraint (64 GB `dma-ranges` offset) that prevents
+vfio-pci and uio_pci_generic. AF_XDP zero-copy requires registering UMEM pages as DMA buffers
+(`xsk_pool_dma_map()`), which fails silently due to the 64 GB PCIe DMA offset on BCM2712.
+The igb driver does not advertise `xdp-zerocopy` capability (`ethtool -k` empty).
+
+`force_copy=1` avoids this: the kernel manages UMEM lifecycle through its own copy path,
+using the Linux DMA API (which correctly handles the 64 GB offset for I210 receive DMA).
+The XDP hook intercept still happens before sk_buff allocation — providing the ×89 speedup.
+
+H3 confirmed as **negative result**.
+
+**Side discovery (RSS):** igb has 4 combined RX queues by default. AF_XDP binds to queue 0 only.
+RSS distributes TCP traffic across queues 1–3 → XDP_PASS → kernel drop → iperf hangs.
+Required fix: `sudo ethtool -L enP1p1s0 combined 1` before each run.
+Symptom without fix: ping works, iperf/TCP hangs.
+
+### Reverted changes
+
+`force_copy=1` restored. `src_is_afxdp=0` kept (since force_copy=1 means PMD copies
+UMEM→mbuf internally — no extra deep-copy needed in pipeline). The `src_is_afxdp`
+field and copy block in pipeline.c remain as dead code (for potential future use).
+
+---
+
 ## P6-02: Latency / Jitter (pending)
 
 | Load     | p50 latency | p99 latency | Jitter (p99) |
@@ -186,6 +235,17 @@ Next: H3 (AF_XDP zero-copy, igb Linux ≥ 6.14) — may push throughput closer t
 
 ---
 
+## Phase 7: Summary
+
+| Phase | PMD | WAN config | Throughput | Retransmits/10s | Latency (ping avg) |
+|-------|-----|-----------|------------|-----------------|-------------------|
+| P1–P6 (baseline) | eth_af_packet | framecnt=512 | ~12 Mbit/s | 2333+ | 0.85 ms |
+| P7-01 | eth_af_packet | framecnt=4096, qdisc_bypass=1 | ~10.5 Mbit/s | ~7300 | ~0.85 ms |
+| P7-03 | net_af_xdp | force_copy=1 | **895 Mbit/s** | **0** | **0.35 ms** |
+| P7-04 | net_af_xdp | zero-copy (no force_copy) | 0 (fails) | — | — |
+
+**Final configuration**: `net_af_xdp0,iface=enP1p1s0,force_copy=1` (WAN) + `eth_af_packet0,iface=eth0` (LAN).
+
 ## Notes on Platform Limitations
 
 AF_PACKET PMD throughput is limited to ~12 Mbit/s on RPi5 because:
@@ -195,4 +255,13 @@ AF_PACKET PMD throughput is limited to ~12 Mbit/s on RPi5 because:
 - AF_PACKET requires kernel involvement per frame (copy through kernel socket layer), no DMA bypass
 - The same code on x86 + vfio-pci achieves line rate (10+ Gbit/s)
 
-Phase 7 explores optimizations: AF_PACKET tuning (framecnt, qdisc_bypass) and AF_XDP PMD.
+AF_XDP PMD (force_copy=1) achieves 895 Mbit/s because:
+- Packets intercepted at XDP hook in igb driver, before sk_buff allocation
+- UMEM ring is shared memory between kernel and DPDK userspace — one syscall per batch
+- force_copy=1 uses kernel copy path for UMEM management (avoids BCM2712 zero-copy DMA issue)
+- LAN (eth0/macb) stays on AF_PACKET — macb does not support XDP native mode on kernel 6.17
+
+AF_XDP zero-copy (XSK_ZEROCOPY) fails on RPi5 because:
+- BCM2712 PCIe dma-ranges (64 GB offset) prevents correct DMA registration of UMEM pages
+- igb does not advertise xdp-zerocopy in ethtool -k on this platform
+- Same root cause as vfio-pci / uio_pci_generic failures
