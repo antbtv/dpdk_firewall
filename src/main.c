@@ -300,18 +300,16 @@ main(int argc, char *argv[])
 
     /* ── Step 10: Launch forwarding lcores ──────────────────────────────── */
     /* lcore 1: WAN (port 0) → LAN (port 1) */
-    s_pipe_args[1].port_in      = 0;
-    s_pipe_args[1].port_out     = 1;
-    s_pipe_args[1].src_is_afxdp = 0;  /* force_copy=1: PMD copies UMEM→mbuf, no extra copy needed */
+    s_pipe_args[1].port_in  = 0;
+    s_pipe_args[1].port_out = 1;
     ret = rte_eal_remote_launch(pipeline_lcore_main, &s_pipe_args[1], 1);
     if (ret != 0)
         rte_exit(EXIT_FAILURE, "Failed to launch lcore 1: %s\n",
                  rte_strerror(-ret));
 
     /* lcore 2: LAN (port 1) → WAN (port 0) */
-    s_pipe_args[2].port_in      = 1;
-    s_pipe_args[2].port_out     = 0;
-    s_pipe_args[2].src_is_afxdp = 0;  /* LAN is AF_PACKET — regular mbufs */
+    s_pipe_args[2].port_in  = 1;
+    s_pipe_args[2].port_out = 0;
     ret = rte_eal_remote_launch(pipeline_lcore_main, &s_pipe_args[2], 2);
     if (ret != 0)
         rte_exit(EXIT_FAILURE, "Failed to launch lcore 2: %s\n",

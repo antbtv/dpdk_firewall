@@ -97,7 +97,7 @@ parse_cidr_str(const char *s, uint32_t *ip_out, uint32_t *mask_out)
     return 0;
 }
 
-/* Parse "80" or "1024-65535" → min, max */
+/* Parse "80" or "1024-65535" → min, max. Returns -1 if min > max. */
 static int
 parse_port_range(const char *s, uint16_t *min_out, uint16_t *max_out)
 {
@@ -114,6 +114,8 @@ parse_port_range(const char *s, uint16_t *min_out, uint16_t *max_out)
         uint16_t p = (uint16_t)atoi(s);
         *min_out = *max_out = p;
     }
+    if (*min_out > *max_out)
+        return -1;
     return 0;
 }
 
@@ -270,6 +272,10 @@ json_to_fw_rule(json_t *args, struct fw_rule *r)
     j = json_object_get(args, "comment");
     if (j && json_is_string(j))
         snprintf(r->comment, sizeof(r->comment), "%s", json_string_value(j));
+
+    /* Validate: RATE_LIMIT rule must have rate_cir > 0 (avoid divide-by-zero in meter) */
+    if (r->action == ACTION_RATE_LIMIT && r->rate_cir == 0)
+        return -1;
 
     return 0;
 }

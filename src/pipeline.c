@@ -100,8 +100,11 @@ pipeline_lcore_main(void *arg)
     struct rte_mbuf *tx_pkts[MAX_BURST];
     struct pkt_meta  meta[MAX_BURST];
 
-    /* Precompute nanoseconds-per-cycle for TSC→ns conversion (stage 6) */
-    const double ns_per_cycle = 1e9 / (double)rte_get_tsc_hz();
+    /* Precompute TSC frequency for TSC→ns conversion (stage 6).
+     * Integer math: avoids floating-point in the hot path.
+     * Formula: now_ns = (cycles / tsc_hz) * 1e9 + (cycles % tsc_hz) * 1e9 / tsc_hz
+     * Safe on RPi5 (tsc_hz ≈ 54 MHz): rem < 54e6, rem * 1e9 < 5.4e16 < 2^64. */
+    const uint64_t tsc_hz = rte_get_tsc_hz();
 
     while (!g_force_quit) {
 
@@ -112,15 +115,18 @@ pipeline_lcore_main(void *arg)
 
         /* ── Stage 2: CLASSIFIER + RX stats ───────────────────────────── */
         for (uint16_t i = 0; i < n; i++) {
-            if (i + 1 < n)
-                rte_prefetch0(rte_pktmbuf_mtod(rx_pkts[i + 1], void *));
+            /* Prefetch 2 packets ahead: Cortex-A76 4-wide decode needs extra
+             * lead time to hide memory latency compared to prefetch-1. */
+            if (i + 2 < n)
+                rte_prefetch0(rte_pktmbuf_mtod(rx_pkts[i + 2], void *));
             classify_pkt(rx_pkts[i], &meta[i]);
             stats_inc_rx(rx_pkts[i]->pkt_len);
         }
 
         /* Snapshot time once per burst — shared by stages 3, 5, 6 */
         uint64_t now_cycles = rte_get_tsc_cycles();
-        uint64_t now_ns     = (uint64_t)((double)now_cycles * ns_per_cycle);
+        uint64_t now_ns     = (now_cycles / tsc_hz) * UINT64_C(1000000000)
+                            + (now_cycles % tsc_hz) * UINT64_C(1000000000) / tsc_hz;
 
         /* ── Stages 3-6 → Stage 7 ──────────────────────────────────────── */
         uint16_t n_tx = 0;
@@ -142,7 +148,8 @@ pipeline_lcore_main(void *arg)
 
             /* ── Stage 4: RULE ENGINE ──────────────────────────────────── */
             uint32_t rule_id;
-            fw_action_t action = rule_match(&meta[i], &rule_id);
+            fw_action_t action = rule_match(&meta[i], &rule_id,
+                                            rx_pkts[i]->pkt_len);
 
             if (action == ACTION_DROP) {
                 rte_pktmbuf_free(rx_pkts[i]);
@@ -169,35 +176,9 @@ pipeline_lcore_main(void *arg)
         if (n_tx == 0)
             continue;
 
-        /*
-         * AF_XDP zero-copy: RX mbufs are backed by UMEM frames.  If we
-         * hand them directly to the AF_PACKET TX port, the PMD copies the
-         * payload to a kernel socket buffer but does NOT return the UMEM
-         * frames to the fill ring → UMEM freelist starves → RX stalls.
-         *
-         * Fix: deep-copy each accepted mbuf to a regular pool buffer, then
-         * free the UMEM-backed original immediately.  Dropped packets (freed
-         * in stages 3-5) already return UMEM frames via rte_pktmbuf_free().
-         * This "selective copy" is cheaper than force_copy=1 which copies
-         * every received packet including those that will be dropped.
-         */
-        if (pa->src_is_afxdp) {
-            uint16_t n_valid = 0;
-            for (uint16_t i = 0; i < n_tx; i++) {
-                struct rte_mbuf *copy = rte_pktmbuf_copy(
-                        tx_pkts[i], g_mbuf_pool, 0, UINT32_MAX);
-                rte_pktmbuf_free(tx_pkts[i]);  /* return UMEM frame now */
-                if (likely(copy != NULL)) {
-                    tx_pkts[n_valid++] = copy;
-                } else {
-                    stats_inc_dropped();
-                }
-            }
-            n_tx = n_valid;
-            if (n_tx == 0)
-                continue;
-        }
-
+        /* force_copy=1 in net_af_xdp PMD: UMEM frames are copied to regular
+         * mbufs inside the PMD before being handed to us.  No userspace copy
+         * needed here — all mbufs in tx_pkts[] are regular pool buffers. */
         uint16_t sent = rte_eth_tx_burst(port_out, 0, tx_pkts, n_tx);
 
         /* Account for transmitted packets */

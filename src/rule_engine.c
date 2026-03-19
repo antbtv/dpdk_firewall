@@ -266,7 +266,7 @@ rule_engine_rebuild(void)
 }
 
 fw_action_t
-rule_match(struct pkt_meta *m, uint32_t *rule_id_out)
+rule_match(struct pkt_meta *m, uint32_t *rule_id_out, uint32_t pkt_len)
 {
     rte_rwlock_read_lock(&g_acl_rwlock);
     struct rte_acl_ctx *ctx = g_acl_ctx;
@@ -313,10 +313,19 @@ rule_match(struct pkt_meta *m, uint32_t *rule_id_out)
         /* proto (0 = any) */
         if (r->proto && m->proto != r->proto)
             continue;
+        /* TCP flags (mask=0 means rule doesn't filter on flags) */
+        if (r->tcp_flags_mask &&
+            (m->tcp_flags & r->tcp_flags_mask) != r->tcp_flags_val)
+            continue;
         /* port ranges */
         if (m->src_port < r->src_port_min || m->src_port > r->src_port_max)
             continue;
         if (m->dst_port < r->dst_port_min || m->dst_port > r->dst_port_max)
+            continue;
+        /* ICMP type/code (255 = any) */
+        if (r->icmp_type != 255 && m->icmp_type != r->icmp_type)
+            continue;
+        if (r->icmp_code != 255 && m->icmp_code != r->icmp_code)
             continue;
 
         best_prio = r->priority;
@@ -342,7 +351,8 @@ rule_match(struct pkt_meta *m, uint32_t *rule_id_out)
     }
 
     struct fw_rule *matched = &g_rules[idx];
-    __atomic_fetch_add(&matched->pkt_count, 1, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&matched->pkt_count,  1,       __ATOMIC_RELAXED);
+    __atomic_fetch_add(&matched->byte_count, pkt_len, __ATOMIC_RELAXED);
 
     if (rule_id_out)
         *rule_id_out = matched->id;

@@ -59,6 +59,7 @@ parse_cidr(const char *s, uint32_t *ip_out, uint32_t *mask_out)
 
 /**
  * Parse "80" → min=max=80, "1024-65535" → min=1024, max=65535.
+ * Returns -1 if min > max.
  */
 static int
 parse_port_range(const char *s, uint16_t *min_out, uint16_t *max_out)
@@ -74,6 +75,11 @@ parse_port_range(const char *s, uint16_t *min_out, uint16_t *max_out)
     } else {
         *min_out = *max_out = (uint16_t)atoi(buf);
     }
+    if (*min_out > *max_out) {
+        RTE_LOG_FW_ERR("Invalid port range: min %u > max %u\n",
+                       *min_out, *max_out);
+        return -1;
+    }
     return 0;
 }
 
@@ -87,9 +93,12 @@ parse_proto(const char *s)
     return 0;
 }
 
-/** "SYN,ACK" → TCP_FLAG_SYN | TCP_FLAG_ACK */
-static uint8_t
-parse_tcp_flags(const char *s)
+/**
+ * "SYN,ACK" → TCP_FLAG_SYN | TCP_FLAG_ACK stored in *flags_out.
+ * Returns 0 on success, -1 if an unknown token is encountered.
+ */
+static int
+parse_tcp_flags(const char *s, uint8_t *flags_out)
 {
     uint8_t flags = 0;
     char    buf[64];
@@ -97,15 +106,17 @@ parse_tcp_flags(const char *s)
 
     char *tok = strtok(buf, ", ");
     while (tok) {
-        if (strcasecmp(tok, "FIN") == 0) flags |= TCP_FLAG_FIN;
-        if (strcasecmp(tok, "SYN") == 0) flags |= TCP_FLAG_SYN;
-        if (strcasecmp(tok, "RST") == 0) flags |= TCP_FLAG_RST;
-        if (strcasecmp(tok, "PSH") == 0) flags |= TCP_FLAG_PSH;
-        if (strcasecmp(tok, "ACK") == 0) flags |= TCP_FLAG_ACK;
-        if (strcasecmp(tok, "URG") == 0) flags |= TCP_FLAG_URG;
+        if      (strcasecmp(tok, "FIN") == 0) flags |= TCP_FLAG_FIN;
+        else if (strcasecmp(tok, "SYN") == 0) flags |= TCP_FLAG_SYN;
+        else if (strcasecmp(tok, "RST") == 0) flags |= TCP_FLAG_RST;
+        else if (strcasecmp(tok, "PSH") == 0) flags |= TCP_FLAG_PSH;
+        else if (strcasecmp(tok, "ACK") == 0) flags |= TCP_FLAG_ACK;
+        else if (strcasecmp(tok, "URG") == 0) flags |= TCP_FLAG_URG;
+        else return -1;  /* unknown flag token → reject */
         tok = strtok(NULL, ", ");
     }
-    return flags;
+    *flags_out = flags;
+    return 0;
 }
 
 /** "accept"→0, "drop"→1, "rate_limit"→2; returns -1 on unknown */
@@ -189,7 +200,11 @@ parse_rule(json_t *obj, struct fw_rule *r)
     /* Optional: src_port / dst_port (number or range string) */
     j = json_object_get(obj, "src_port");
     if (j && json_is_string(j)) {
-        parse_port_range(json_string_value(j), &r->src_port_min, &r->src_port_max);
+        if (parse_port_range(json_string_value(j),
+                             &r->src_port_min, &r->src_port_max) != 0) {
+            RTE_LOG_FW_ERR("Bad src_port range: %s\n", json_string_value(j));
+            return -1;
+        }
     } else {
         r->src_port_min = 0;
         r->src_port_max = 65535;
@@ -197,7 +212,11 @@ parse_rule(json_t *obj, struct fw_rule *r)
 
     j = json_object_get(obj, "dst_port");
     if (j && json_is_string(j)) {
-        parse_port_range(json_string_value(j), &r->dst_port_min, &r->dst_port_max);
+        if (parse_port_range(json_string_value(j),
+                             &r->dst_port_min, &r->dst_port_max) != 0) {
+            RTE_LOG_FW_ERR("Bad dst_port range: %s\n", json_string_value(j));
+            return -1;
+        }
     } else {
         r->dst_port_min = 0;
         r->dst_port_max = 65535;
@@ -206,8 +225,14 @@ parse_rule(json_t *obj, struct fw_rule *r)
     /* Optional: tcp_flags (mask = all matched bits, val = expected bits) */
     j = json_object_get(obj, "tcp_flags");
     if (j && json_is_string(j)) {
-        r->tcp_flags_val  = parse_tcp_flags(json_string_value(j));
-        r->tcp_flags_mask = r->tcp_flags_val;  /* exact match on specified flags */
+        uint8_t flags;
+        if (parse_tcp_flags(json_string_value(j), &flags) != 0) {
+            RTE_LOG_FW_ERR("Unknown tcp_flags value: %s\n",
+                           json_string_value(j));
+            return -1;
+        }
+        r->tcp_flags_val  = flags;
+        r->tcp_flags_mask = flags;  /* exact match on specified flags */
     }
 
     /* Optional: icmp_type / icmp_code (255 = any) */
@@ -226,6 +251,18 @@ parse_rule(json_t *obj, struct fw_rule *r)
             r->rate_cir = (uint64_t)json_integer_value(cir) * 1000 / 8;
         if (cbs && json_is_integer(cbs))
             r->rate_cbs = (uint64_t)json_integer_value(cbs);
+    }
+
+    /* Validate: RATE_LIMIT rule must have rate_cir > 0 (avoid divide-by-zero in meter) */
+    if (r->action == ACTION_RATE_LIMIT && r->rate_cir == 0) {
+        RTE_LOG_FW_ERR("RATE_LIMIT rule requires rate.cir_kbps > 0\n");
+        return -1;
+    }
+
+    /* Validate: id=0 is reserved for "no match" in rte_acl userdata */
+    if (r->id == 0) {
+        static uint32_t s_auto_id = 0;
+        r->id = ++s_auto_id;
     }
 
     return 0;

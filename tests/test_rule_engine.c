@@ -104,10 +104,18 @@ test_drop_rule(void)
 
     uint32_t rid;
     struct pkt_meta m = make_tcp(ip4("1.2.3.4"), ip4("5.6.7.8"), 12345, 80);
-    assert(rule_match(&m, &rid) == ACTION_DROP);
+    assert(rule_match(&m, &rid, 200) == ACTION_DROP);
     assert(rid == (uint32_t)id);
 
-    printf("  test 1 PASS: TCP dst_port=80 → DROP, rule_id matched\n");
+    /* Verify byte_count was incremented with the provided pkt_len */
+    struct fw_rule listed[MAX_RULES];
+    uint32_t n = 0;
+    rule_list(listed, &n);
+    assert(n == 1);
+    assert(listed[0].pkt_count  == 1);
+    assert(listed[0].byte_count == 200);
+
+    printf("  test 1 PASS: TCP dst_port=80 → DROP, rule_id matched, byte_count=200\n");
 }
 
 /* ─── Test 2 ─────────────────────────────────────────────────────────────── */
@@ -126,7 +134,7 @@ test_default_policy(void)
 
     uint32_t rid;
     struct pkt_meta m = make_tcp(ip4("1.2.3.4"), ip4("5.6.7.8"), 12345, 443);
-    assert(rule_match(&m, &rid) == ACTION_ACCEPT);
+    assert(rule_match(&m, &rid, 100) == ACTION_ACCEPT);
     assert(rid == 0);   /* 0 = no rule matched */
 
     printf("  test 2 PASS: TCP dst_port=443 → ACCEPT (default policy, rid=0)\n");
@@ -153,7 +161,7 @@ test_priority(void)
 
     uint32_t rid;
     struct pkt_meta m = make_tcp(ip4("1.2.3.4"), ip4("5.6.7.8"), 12345, 80);
-    assert(rule_match(&m, &rid) == ACTION_ACCEPT);
+    assert(rule_match(&m, &rid, 100) == ACTION_ACCEPT);
     assert(rid == (uint32_t)id_b);
 
     printf("  test 3 PASS: priority 100 (ACCEPT) beats 200 (DROP)\n");
@@ -189,12 +197,12 @@ test_cidr_mask(void)
 
     /* 192.168.1.100 is inside 192.168.1.0/24 → DROP */
     struct pkt_meta m1 = make_tcp(ip4("192.168.1.100"), ip4("10.0.0.1"), 0, 0);
-    assert(rule_match(&m1, &rid) == ACTION_DROP);
+    assert(rule_match(&m1, &rid, 100) == ACTION_DROP);
     assert(rid == (uint32_t)id);
 
     /* 10.0.0.1 is outside → ACCEPT (default policy) */
     struct pkt_meta m2 = make_tcp(ip4("10.0.0.1"), ip4("192.168.1.100"), 0, 0);
-    assert(rule_match(&m2, &rid) == ACTION_ACCEPT);
+    assert(rule_match(&m2, &rid, 100) == ACTION_ACCEPT);
     assert(rid == 0);
 
     printf("  test 4 PASS: CIDR /24 matches 192.168.1.100, skips 10.0.0.1\n");
@@ -216,7 +224,7 @@ test_rebuild(void)
     struct pkt_meta m = make_tcp(ip4("1.2.3.4"), ip4("5.6.7.8"), 12345, 9999);
 
     /* Phase A: no rules */
-    assert(rule_match(&m, &rid) == ACTION_ACCEPT);
+    assert(rule_match(&m, &rid, 100) == ACTION_ACCEPT);
     assert(rid == 0);
 
     /* Phase B: add DROP rule; rule_add() calls rule_engine_rebuild() internally */
@@ -224,10 +232,120 @@ test_rebuild(void)
     int id = rule_add(&r);
     assert(id > 0);
 
-    assert(rule_match(&m, &rid) == ACTION_DROP);
+    assert(rule_match(&m, &rid, 100) == ACTION_DROP);
     assert(rid == (uint32_t)id);
 
     printf("  test 5 PASS: rule_add() rebuilt engine, TCP:9999 now DROPped\n");
+}
+
+/* ─── Test 6 ─────────────────────────────────────────────────────────────── */
+/*
+ * TCP flags matching: rule with tcp_flags="SYN" must match SYN packets only.
+ *   Rule: proto=TCP, tcp_flags=SYN → DROP.
+ *   SYN packet  → ACTION_DROP.
+ *   ACK packet  → ACTION_ACCEPT (default policy, flags don't match).
+ */
+static void
+test_tcp_flags(void)
+{
+    clear_rules();
+    g_default_policy = ACTION_ACCEPT;
+
+    struct fw_rule r;
+    memset(&r, 0, sizeof(r));
+    r.priority      = 100;
+    r.proto         = IPPROTO_TCP;
+    r.src_port_min  = 0;
+    r.src_port_max  = 65535;
+    r.dst_port_min  = 0;
+    r.dst_port_max  = 65535;
+    r.tcp_flags_val  = TCP_FLAG_SYN;
+    r.tcp_flags_mask = TCP_FLAG_SYN;
+    r.action        = ACTION_DROP;
+    int id = rule_add(&r);
+    assert(id > 0);
+
+    uint32_t rid;
+
+    /* SYN packet → must match rule → DROP */
+    struct pkt_meta msyn;
+    memset(&msyn, 0, sizeof(msyn));
+    msyn.src_ip   = ip4("1.2.3.4");
+    msyn.dst_ip   = ip4("5.6.7.8");
+    msyn.proto    = IPPROTO_TCP;
+    msyn.tcp_flags = TCP_FLAG_SYN;
+    msyn.is_ipv4  = 1;
+    assert(rule_match(&msyn, &rid, 60) == ACTION_DROP);
+    assert(rid == (uint32_t)id);
+
+    /* ACK packet → flags don't match → ACCEPT (default) */
+    struct pkt_meta mack;
+    memset(&mack, 0, sizeof(mack));
+    mack.src_ip   = ip4("1.2.3.4");
+    mack.dst_ip   = ip4("5.6.7.8");
+    mack.proto    = IPPROTO_TCP;
+    mack.tcp_flags = TCP_FLAG_ACK;
+    mack.is_ipv4  = 1;
+    assert(rule_match(&mack, &rid, 60) == ACTION_ACCEPT);
+    assert(rid == 0);
+
+    printf("  test 6 PASS: tcp_flags=SYN matches SYN, skips ACK\n");
+}
+
+/* ─── Test 7 ─────────────────────────────────────────────────────────────── */
+/*
+ * ICMP type/code matching.
+ *   Rule: proto=ICMP, icmp_type=8 (echo request) → DROP, default=ACCEPT.
+ *   type=8  → ACTION_DROP.
+ *   type=0  → ACTION_ACCEPT (echo reply, doesn't match).
+ */
+static void
+test_icmp_matching(void)
+{
+    clear_rules();
+    g_default_policy = ACTION_ACCEPT;
+
+    struct fw_rule r;
+    memset(&r, 0, sizeof(r));
+    r.priority     = 100;
+    r.proto        = IPPROTO_ICMP;
+    r.src_port_min = 0;
+    r.src_port_max = 65535;
+    r.dst_port_min = 0;
+    r.dst_port_max = 65535;
+    r.icmp_type    = 8;   /* echo request */
+    r.icmp_code    = 255; /* any code */
+    r.action       = ACTION_DROP;
+    int id = rule_add(&r);
+    assert(id > 0);
+
+    uint32_t rid;
+
+    /* ICMP echo request (type=8) → DROP */
+    struct pkt_meta mreq;
+    memset(&mreq, 0, sizeof(mreq));
+    mreq.src_ip   = ip4("1.2.3.4");
+    mreq.dst_ip   = ip4("5.6.7.8");
+    mreq.proto    = IPPROTO_ICMP;
+    mreq.icmp_type = 8;
+    mreq.icmp_code = 0;
+    mreq.is_ipv4  = 1;
+    assert(rule_match(&mreq, &rid, 64) == ACTION_DROP);
+    assert(rid == (uint32_t)id);
+
+    /* ICMP echo reply (type=0) → ACCEPT (default) */
+    struct pkt_meta mrep;
+    memset(&mrep, 0, sizeof(mrep));
+    mrep.src_ip   = ip4("5.6.7.8");
+    mrep.dst_ip   = ip4("1.2.3.4");
+    mrep.proto    = IPPROTO_ICMP;
+    mrep.icmp_type = 0;
+    mrep.icmp_code = 0;
+    mrep.is_ipv4  = 1;
+    assert(rule_match(&mrep, &rid, 64) == ACTION_ACCEPT);
+    assert(rid == 0);
+
+    printf("  test 7 PASS: icmp_type=8 matches echo request, skips echo reply\n");
 }
 
 /* ─── Entry point ────────────────────────────────────────────────────────── */
@@ -271,15 +389,17 @@ main(void)
         return EXIT_FAILURE;
     }
 
-    printf("test_rule_engine: running 5 tests\n");
+    printf("test_rule_engine: running 7 tests\n");
 
     test_drop_rule();
     test_default_policy();
     test_priority();
     test_cidr_mask();
     test_rebuild();
+    test_tcp_flags();
+    test_icmp_matching();
 
-    printf("test_rule_engine: all 5 tests PASSED\n");
+    printf("test_rule_engine: all 7 tests PASSED\n");
 
     rte_eal_cleanup();
     return EXIT_SUCCESS;

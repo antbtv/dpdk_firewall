@@ -28,9 +28,10 @@ int rule_engine_reload_from_config(void);
  * rule_match() — classify a single packet.
  * @param m            Packet metadata filled by CLASSIFIER stage.
  * @param rule_id_out  Set to the matching rule ID (0 if default policy).
+ * @param pkt_len      Packet length in bytes (used to update byte_count counter).
  * @return             Action to take (ACCEPT / DROP / RATE_LIMIT).
  */
-fw_action_t rule_match(struct pkt_meta *m, uint32_t *rule_id_out);
+fw_action_t rule_match(struct pkt_meta *m, uint32_t *rule_id_out, uint32_t pkt_len);
 
 /** Dynamic rule management (called from mgmt handlers). */
 int rule_add(struct fw_rule *r);
