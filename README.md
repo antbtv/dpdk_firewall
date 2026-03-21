@@ -1,7 +1,7 @@
 # dpdk_firewall
 
 High-performance DPDK-based stateless firewall for Raspberry Pi 5.
-Diploma thesis — Butov A.V., A-07-22, 2026.
+Diploma thesis — Butov A.V., 026.
 
 ## Overview
 
@@ -46,23 +46,17 @@ ninja -C build
 
 ## Quick Start
 
+`run.sh` automize all steps
+
 ```bash
-# 1. Hugepages (do once per boot):
-echo 512 | sudo tee /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+# Only setup RPi5
+./run.sh setup
 
-# 2. Load igb driver and bring up interfaces:
-sudo modprobe igb
-sudo ip link set enP1p1s0 up
-sudo ip link set eth0 up
+# Setup + run firewall
+./run.sh start
 
-# 3. Reduce igb to 1 combined queue (required for AF_XDP):
-sudo ethtool -L enP1p1s0 combined 1
-
-# 4. Clear any stale XDP program:
-sudo ip link set enP1p1s0 xdp off
-
-# 5. Run:
-sudo ./build/dpdk_firewall --config config/rules.json --log-level info
+# Custom config
+./run.sh start config/my_rules.json
 ```
 
 ## Configuration
