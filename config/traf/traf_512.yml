@@ -1,0 +1,36 @@
+---
+experiment:
+ time: 30
+ output_directory: './results/'
+network:
+ server1:
+  ip: '10.99.0.2'
+  int: 'eth0'
+  traffic:
+   server:
+     use_pfring: 'False'
+     enabled: 'True'
+     disable_output: 'True'
+     disable_time_corrector: 'False'
+     ports: [0]
+     length: 512
+ client1:
+  ip: '10.99.0.1'
+  int: 'eno1'
+  traffic:
+   client:
+     distribution: 'deterministic'
+     intensity: 220000
+     npackets: 0
+     length: 512
+     direction: '10.99.0.2'
+     direction_mac: 'dc:a6:32:b7:b4:31'
+     port: 0
+     use_pfring: 'False'
+     single_thread: 'True'
+     disable_output: 'True'
+     disable_timestamps: 'False'
+     measure_latency: 'False'
+     sync_time: 0
+   server:
+     enabled: 'False'

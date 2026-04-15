@@ -1,0 +1,19 @@
+# run=2 intensity=80000
+Traffic generator
+Server enabled: no
+Creating client 'client1'
+	sending to servers: 10.99.0.2
+	RAW mode
+	PF_RING enabled: no
+	bound to 10.99.0.1 interface
+	packet length: 64 bytes
+	intensity: 80000 packets/s, deterministic distribution, active for: 15 seconds
+	output directory: "/tmp/./results/"
+	output disabled, timestamps enabled
+Client generator started
+Client generator finished. Generation time is: 15000 ms
+total_delay = 15000000000 ns, 1200000 packets sent
+Speed: 79999.9 packet/s, 5.11999 MB/s
+Npackets (by direction IP):
+	10.99.0.2	1200000
+t-raf finished
