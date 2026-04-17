@@ -1,0 +1,1 @@
+bridge_64: sent=4500000, client_pps=150015, client_mbs=9.60, gen_time=30.0s

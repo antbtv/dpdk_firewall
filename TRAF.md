@@ -174,7 +174,7 @@ Speed: 892341 packet/s, 57.1 MB/s
 
 | Файл                      | `length` | `distribution`  | `intensity` | Расчёт (90% × 1 Гбит/с) |
 |---------------------------|----------|-----------------|-------------|--------------------------|
-| `traf_64.yml`             | 64       | deterministic   | 1,750,000   | ÷ (64×8) |
+| `traf_64.yml`             | 64       | deterministic   | 150,000     | ≤ single_thread cap ~170k pkt/s |
 | `traf_512.yml`            | 512      | deterministic   | 220,000     | ÷ (512×8) |
 | `traf_800.yml`            | 800      | deterministic   | 140,000     | ÷ (800×8) |
 | `traf_1500.yml`           | 1500     | deterministic   | 75,000      | ÷ (1500×8) |

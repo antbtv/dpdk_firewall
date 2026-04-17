@@ -90,7 +90,7 @@ for SCENARIO in "${SCENARIOS[@]}"; do
         read -r
 
         echo "  Запускаю t-raf клиент..."
-        OUTPUT=$(sudo "$TRAF_BIN" "$CONFIG" client1 2>&1)
+        OUTPUT=$(sudo "$TRAF_BIN" "$CONFIG" client1 2>&1) || true
         echo "$OUTPUT" | tee "${OUTDIR}/client.txt"
 
         # Извлечь ключевые числа
