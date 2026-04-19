@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 /** Maximum packets processed per burst. */
-#define MAX_BURST 32
+#define MAX_BURST 8
 
 /** Arguments passed to pipeline_lcore_main() via rte_eal_remote_launch(). */
 struct pipeline_args {
