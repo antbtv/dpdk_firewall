@@ -1,1 +1,8 @@
-bridge_1500: sent=2250000, client_pps=75002, client_mbs=112.50, gen_time=30.0s
+scenario=bridge size=1500
+client_pps=75002
+client_mbs=900.0
+sent_total=2250000
+generation_time_ms=29999
+server_received=2250000
+server_pps=75000
+loss_pct=0.0
