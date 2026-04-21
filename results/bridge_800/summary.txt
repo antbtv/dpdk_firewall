@@ -1,8 +1,1 @@
-scenario=bridge size=800
-client_pps=140017
-client_mbs=896.1
-sent_total=4200000
-generation_time_ms=29996
-server_received=2590000
-server_pps=86333
-loss_pct=38.3
+bridge_800: sent=4200000, client_pps=140017, client_mbs=112.01, gen_time=30.0s

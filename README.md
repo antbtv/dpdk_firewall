@@ -445,12 +445,16 @@ sudo ip link set eth0 up
 # Запустить сбор метрик (в отдельном терминале):
 ./scripts/collect_metrics.sh 38 results/bridge_64/metrics enP1p1s0 &
 
+# === raspi4 (один раз) ===
+sudo ip addr add 10.99.0.2/24 dev eth0 2>/dev/null || true                                                                                                                               
+sudo ip link set eth0 up                                                                                                                                                                 
+                                
 # === raspi4 (параллельно) ===
-sudo ~/t-raf/build/t-raf ~/traf_64.yml server1
+sudo ./t-raf/build/t-raf ~/traf_64.yml server1
 # Записать итоговое число (received count) из вывода.
 
 # === Dev PC (после запуска сервера) ===
-sudo ./t-raf config/traf/traf_64.yml client1
+sudo ../t-raf config/traf/traf_64.yml client1
 ```
 
 ### Сценарий 2: DPDK 

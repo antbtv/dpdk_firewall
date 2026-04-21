@@ -1,8 +1,1 @@
-scenario=bridge size=64
-client_pps=150015
-client_mbs=76.8
-sent_total=4500000
-generation_time_ms=29997
-server_received=2850000
-server_pps=95000
-loss_pct=36.7
+bridge_64: sent=4500000, client_pps=150015, client_mbs=9.60, gen_time=30.0s

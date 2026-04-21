@@ -1,8 +1,1 @@
-scenario=bridge size=512
-client_pps=183636
-client_mbs=752.6
-sent_total=6600000
-generation_time_ms=35941
-server_received=3670000
-server_pps=102115
-loss_pct=44.4
+bridge_512: sent=6600000, client_pps=176922, client_mbs=90.58, gen_time=37.3s
