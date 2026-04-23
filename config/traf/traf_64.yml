@@ -1,6 +1,6 @@
 ---
 experiment:
- time: 30
+ time: 60
  output_directory: './results/'
 network:
  server1:

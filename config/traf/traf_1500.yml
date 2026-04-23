@@ -1,6 +1,6 @@
 ---
 experiment:
- time: 30
+ time: 60
  output_directory: './results/'
 network:
  server1:
@@ -20,7 +20,7 @@ network:
   traffic:
    client:
      distribution: 'deterministic'
-     intensity: 75000
+     intensity: 60000
      npackets: 0
      length: 1500
      direction: '10.99.0.2'

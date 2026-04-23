@@ -6,13 +6,13 @@ Creating client 'client1'
 	PF_RING enabled: no
 	bound to 10.99.0.1 interface
 	packet length: 800 bytes
-	intensity: 140000 packets/s, deterministic distribution, active for: 60 seconds
+	active for: 60 seconds, no delay
 	output directory: "config/traf/./results/"
 	output disabled, timestamps enabled
 Client generator started
-Client generator finished. Generation time is: 59992.8 ms
-total_delay = 59992800000 ns, 8400000 packets sent
-Speed: 140017 packet/s, 112.013 MB/s
+Client generator finished. Generation time is: 60000.1 ms
+total_delay = 0 ns, 7276182 packets sent
+Speed: 121269 packet/s, 97.0156 MB/s
 Npackets (by direction IP):
-	10.99.0.2	8400000
+	10.99.0.2	7276182
 t-raf finished

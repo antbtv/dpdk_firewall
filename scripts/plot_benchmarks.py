@@ -26,9 +26,10 @@ RESULTS_DIR = 'results'
 PLOTS_DIR = os.path.join(RESULTS_DIR, 'plots')
 
 # Cumulative server counters: prev[scenario][size] = cumulative count BEFORE this test
+# P11: server restarted between each test → all prev = 0
 CUMULATIVE_PREV = {
-    'bridge': {64: 0,         512: 2_860_000,  800: 6_400_000,  1500: 9_310_000},
-    'dpdk':   {64: 0,         512: 2_660_000,  800: 5_780_000,  1500: 8_450_000},
+    'bridge': {64: 0, 512: 0, 800: 0, 1500: 0},
+    'dpdk':   {64: 0, 512: 0, 800: 0, 1500: 0},
 }
 
 # Hardcoded bridge CPU data (metrics not copied from RPi5; values from terminal output)
