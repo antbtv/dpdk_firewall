@@ -51,7 +51,7 @@ static void
 print_usage(const char *prog)
 {
     fprintf(stderr,
-            "Usage: %s --config <path> [--log-level debug|info|warning|error]\n",
+            "Usage: %s --config <path> [--log-level debug|info|warning|error] [--hairpin]\n",
             prog);
 }
 
@@ -186,6 +186,14 @@ main(int argc, char *argv[])
     if (prescan_args(argc, argv, &config_path, &cli_log_level) != 0)
         return EXIT_FAILURE;
 
+    int hairpin_mode = 0;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--hairpin") == 0) {
+            hairpin_mode = 1;
+            break;
+        }
+    }
+
     /* ── Step 2: Extract port configuration (no EAL yet) ────────────────── */
     char wan_pci[32], wan_iface[32];
     char lan_pci[32], lan_iface[32];
@@ -273,14 +281,15 @@ main(int argc, char *argv[])
     rte_log_set_level(fw_logtype, (uint32_t)effective_level);
 
     /* ── Step 7: Verify lcore layout ────────────────────────────────────── */
-    if (!rte_lcore_is_enabled(1) || !rte_lcore_is_enabled(2))
+    if (!rte_lcore_is_enabled(1) ||
+        (!hairpin_mode && !rte_lcore_is_enabled(2)))
         rte_exit(EXIT_FAILURE,
                  "Need at least 3 lcores (0=control, 1=WAN->LAN, 2=LAN->WAN)\n");
 
     /* ── Step 8: Initialise modules ─────────────────────────────────────── */
     stats_init();
 
-    if (port_init_all(2) != 0)
+    if (port_init_all(hairpin_mode ? 1 : 2) != 0)
         rte_exit(EXIT_FAILURE, "port_init_all failed\n");
 
     if (rule_engine_init() != 0)
@@ -299,21 +308,32 @@ main(int argc, char *argv[])
     sigaction(SIGHUP,  &sa_hup,  NULL);
 
     /* ── Step 10: Launch forwarding lcores ──────────────────────────────── */
-    /* lcore 1: WAN (port 0) → LAN (port 1) */
-    s_pipe_args[1].port_in  = 0;
-    s_pipe_args[1].port_out = 1;
-    ret = rte_eal_remote_launch(pipeline_lcore_main, &s_pipe_args[1], 1);
-    if (ret != 0)
-        rte_exit(EXIT_FAILURE, "Failed to launch lcore 1: %s\n",
-                 rte_strerror(-ret));
+    if (hairpin_mode) {
+        /* Hairpin mode: port 0 → port 0 (single-port loopback for testing) */
+        s_pipe_args[1].port_in  = 0;
+        s_pipe_args[1].port_out = 0;
+        ret = rte_eal_remote_launch(pipeline_lcore_main, &s_pipe_args[1], 1);
+        if (ret != 0)
+            rte_exit(EXIT_FAILURE, "Failed to launch lcore 1: %s\n",
+                     rte_strerror(-ret));
+        RTE_LOG_FW_INFO("Hairpin mode: port 0 → port 0\n");
+    } else {
+        /* lcore 1: WAN (port 0) → LAN (port 1) */
+        s_pipe_args[1].port_in  = 0;
+        s_pipe_args[1].port_out = 1;
+        ret = rte_eal_remote_launch(pipeline_lcore_main, &s_pipe_args[1], 1);
+        if (ret != 0)
+            rte_exit(EXIT_FAILURE, "Failed to launch lcore 1: %s\n",
+                     rte_strerror(-ret));
 
-    /* lcore 2: LAN (port 1) → WAN (port 0) */
-    s_pipe_args[2].port_in  = 1;
-    s_pipe_args[2].port_out = 0;
-    ret = rte_eal_remote_launch(pipeline_lcore_main, &s_pipe_args[2], 2);
-    if (ret != 0)
-        rte_exit(EXIT_FAILURE, "Failed to launch lcore 2: %s\n",
-                 rte_strerror(-ret));
+        /* lcore 2: LAN (port 1) → WAN (port 0) */
+        s_pipe_args[2].port_in  = 1;
+        s_pipe_args[2].port_out = 0;
+        ret = rte_eal_remote_launch(pipeline_lcore_main, &s_pipe_args[2], 2);
+        if (ret != 0)
+            rte_exit(EXIT_FAILURE, "Failed to launch lcore 2: %s\n",
+                     rte_strerror(-ret));
+    }
 
     RTE_LOG_FW_INFO("dpdk_firewall started — lcore 0 running control plane\n");
 
@@ -324,7 +344,8 @@ main(int argc, char *argv[])
     RTE_LOG_FW_INFO("Shutting down...\n");
 
     rte_eal_wait_lcore(1);
-    rte_eal_wait_lcore(2);
+    if (!hairpin_mode)
+        rte_eal_wait_lcore(2);
 
     port_stop_all();
     rte_eal_cleanup();
