@@ -234,10 +234,6 @@ main(int argc, char *argv[])
     EAL_PUSH(argv[0]);
     EAL_PUSH("--proc-type");
     EAL_PUSH("primary");
-    /* In hairpin mode only lcores 0 and 1 are used; restrict EAL to them. */
-    if (hairpin_mode) {
-        EAL_PUSH("-l"); EAL_PUSH("0,1");
-    }
 
     /* WAN port */
     if (wan_pci[0]) {
@@ -247,8 +243,7 @@ main(int argc, char *argv[])
          * address offset).  Keep the NIC under the kernel igb driver and
          * reach it via AF_PACKET sockets — no rebinding needed. */
         snprintf(vdev_arg, sizeof(vdev_arg),
-                 "net_af_xdp0,iface=%s%s", wan_iface,
-                 hairpin_mode ? "" : ",force_copy=1");
+                 "net_af_xdp0,iface=%s,force_copy=1", wan_iface);
         EAL_PUSH("--vdev"); EAL_PUSH(vdev_arg);
     }
 
