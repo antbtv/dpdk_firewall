@@ -27,7 +27,7 @@ network:
      direction_mac: '02:00:00:00:00:02'
      port: 0
      use_pfring: 'False'
-     single_thread: 'False'
+     single_thread: 'True'
      disable_output: 'True'
      disable_timestamps: 'False'
      measure_latency: 'False'

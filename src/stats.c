@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <rte_ethdev.h>
+
 #include "stats.h"
 #include "port.h"
 #include "log.h"
@@ -54,7 +56,8 @@ stats_get_snapshot(struct fw_stats_snapshot *out)
     out->total_rx_bytes    = __atomic_load_n(&s_rx_bytes,    __ATOMIC_RELAXED);
     out->total_tx_bytes    = __atomic_load_n(&s_tx_bytes,    __ATOMIC_RELAXED);
 
-    for (uint16_t i = 0; i < FW_MAX_PORTS; i++)
+    uint16_t n_ports = rte_eth_dev_count_avail();
+    for (uint16_t i = 0; i < n_ports && i < FW_MAX_PORTS; i++)
         port_stats_get(i, &out->port_stats[i]);
 }
 

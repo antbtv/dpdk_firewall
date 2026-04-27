@@ -20,7 +20,7 @@ network:
   traffic:
    client:
      distribution: 'deterministic'
-     intensity: 170000
+     intensity: 244141
      npackets: 0
      length: 512
      direction: '10.99.0.2'
