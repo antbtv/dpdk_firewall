@@ -8,7 +8,7 @@ network:
   int: 'vns_recv'
   traffic:
    server:
-     use_pfring: 'False'
+     use_pfring: 'True'
      enabled: 'True'
      disable_output: 'True'
      disable_time_corrector: 'False'
@@ -26,7 +26,7 @@ network:
      direction: '10.50.0.2'
      direction_mac: '02:00:00:00:00:02'
      port: 0
-     use_pfring: 'False'
+     use_pfring: 'True'
      single_thread: 'True'
      disable_output: 'True'
      disable_timestamps: 'False'
