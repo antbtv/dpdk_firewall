@@ -2,8 +2,9 @@
 # run.sh — RPi5 dpdk_firewall launch script
 #
 # Usage:
-#   ./run.sh setup          — pull, build, prepare interfaces (no firewall start)
-#   ./run.sh start [config] — setup + start firewall (default config: config/rules.json)
+#   ./run.sh setup                — pull, build, prepare interfaces (no firewall start)
+#   ./run.sh start [config]       — setup + start firewall (default config: config/rules.json)
+#   ./run.sh hairpin [config]     — setup + start in hairpin mode (single port, lcore 0+1)
 
 set -e
 
@@ -79,5 +80,13 @@ if [ "${1:-}" = "start" ]; then
     exec sudo ./build/dpdk_firewall --config "$CONFIG" --log-level info
 fi
 
-echo "Usage: $0 setup | start [config]"
+if [ "${1:-}" = "hairpin" ]; then
+    HAIRPIN_CONFIG="${2:-config/bench_hairpin.json}"
+    [ -f "$HAIRPIN_CONFIG" ] || die "Config not found: $HAIRPIN_CONFIG"
+    info "Starting firewall in hairpin mode with config: $HAIRPIN_CONFIG"
+    echo ""
+    exec sudo ./build/dpdk_firewall --config "$HAIRPIN_CONFIG" --log-level info --hairpin
+fi
+
+echo "Usage: $0 setup | start [config] | hairpin [config]"
 exit 1
