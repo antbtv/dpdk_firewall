@@ -92,6 +92,20 @@ def parse_cpu(path):
 # Load all data
 # ---------------------------------------------------------------------------
 
+def parse_summary(path):
+    """Возвращает dict с полями из summary.txt (generation_ms, sent_total, и др.)."""
+    result = {}
+    try:
+        for line in open(path):
+            line = line.strip()
+            if '=' in line:
+                k, _, v = line.partition('=')
+                result[k.strip()] = v.strip()
+    except FileNotFoundError:
+        pass
+    return result
+
+
 def load_data():
     data = {}
     for scenario in SCENARIOS:
@@ -101,6 +115,21 @@ def load_data():
             pps, mbit, sent = parse_client(os.path.join(d, 'client.txt'))
             recv = parse_received(os.path.join(d, 'server_received.txt'))
             cpu  = parse_cpu(os.path.join(d, 'metrics_cpu.log'))
+            summ = parse_summary(os.path.join(d, 'summary.txt'))
+
+            # summary.txt может переопределить recv и sent
+            if 'server_received' in summ:
+                recv = int(summ['server_received'])
+
+            # Если в summary.txt есть generation_ms — используем delivered pps/mbit
+            # (сатурационный тест: клиент шлёт быстрее, чем может, важна доставка)
+            if 'generation_ms' in summ and recv is not None:
+                gen_s = float(summ['generation_ms']) / 1000.0
+                if 'sent_total' in summ:
+                    sent = int(summ['sent_total'])
+                if gen_s > 0:
+                    pps  = recv / gen_s
+                    mbit = pps * size * 8 / 1e6
 
             loss = None
             if sent and recv is not None and sent > 0:

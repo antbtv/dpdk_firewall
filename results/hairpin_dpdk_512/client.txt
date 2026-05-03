@@ -14,5 +14,5 @@ Client generator finished. Generation time is: 59999.8 ms
 total_delay = 59999846400 ns, 14648400 packets sent
 Speed: 244141 packet/s, 125 MB/s
 Npackets (by direction IP):
-	10.50.0.2	13540622
+	10.50.0.2	13561141
 t-raf finished

@@ -1,4 +1,6 @@
 scenario=hairpin_bridge size=64
-client_pps=349040
-sent_total=20940000
-server_received=20810000
+client_pps=800193
+sent_total=117187500
+server_received=56910000
+generation_ms=146449
+intensity=1953125

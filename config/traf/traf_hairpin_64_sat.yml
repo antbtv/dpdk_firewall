@@ -1,0 +1,36 @@
+---
+experiment:
+ time: 60
+ output_directory: './results/'
+network:
+ server1:
+  ip: '10.50.0.2'
+  int: 'vns_recv'
+  traffic:
+   server:
+     use_pfring: 'False'
+     enabled: 'True'
+     disable_output: 'True'
+     disable_time_corrector: 'False'
+     ports: [0]
+     length: 64
+ client1:
+  ip: '10.50.0.1'
+  int: 'vns_send'
+  traffic:
+   client:
+     distribution: 'deterministic'
+     intensity: 1953125
+     npackets: 0
+     length: 64
+     direction: '10.50.0.2'
+     direction_mac: '02:00:00:00:00:02'
+     port: 0
+     use_pfring: 'False'
+     single_thread: 'False'
+     disable_output: 'True'
+     disable_timestamps: 'True'
+     measure_latency: 'False'
+     sync_time: 0
+   server:
+     enabled: 'False'

@@ -10,9 +10,9 @@ Creating client 'client1'
 	output directory: "config/traf/./results/"
 	output disabled, timestamps disabled
 Client generator started
-Client generator finished. Generation time is: 59993.1 ms
+Client generator finished. Generation time is: 60471.3 ms
 total_delay = 59993100000 ns, 20940000 packets sent
-Speed: 349040 packet/s, 22.3386 MB/s
+Speed: 346280 packet/s, 22.1619 MB/s
 Npackets (by direction IP):
-	10.50.0.2	18328795
+	10.50.0.2	20064302
 t-raf finished
