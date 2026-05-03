@@ -1,1 +1,0 @@
-bridge_1500: sent=2250000, client_pps=75002, client_mbs=112.50, gen_time=30.0s

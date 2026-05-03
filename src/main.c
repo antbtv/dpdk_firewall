@@ -242,8 +242,14 @@ main(int argc, char *argv[])
         /* BCM2712 PCIe has no IOMMU → uio_pci_generic DMA fails (64 GB
          * address offset).  Keep the NIC under the kernel igb driver and
          * reach it via AF_PACKET sockets — no rebinding needed. */
+        /* force_copy=1 is required only for bridge mode (AF_XDP→AF_PACKET
+         * cross-PMD forwarding causes UMEM starvation without it).
+         * In hairpin mode there is no LAN port, so UMEM frames are recycled
+         * within the same AF_XDP PMD and the copy is unnecessary. */
         snprintf(vdev_arg, sizeof(vdev_arg),
-                 "net_af_xdp0,iface=%s,force_copy=1", wan_iface);
+                 hairpin_mode ? "net_af_xdp0,iface=%s"
+                              : "net_af_xdp0,iface=%s,force_copy=1",
+                 wan_iface);
         EAL_PUSH("--vdev"); EAL_PUSH(vdev_arg);
     }
 

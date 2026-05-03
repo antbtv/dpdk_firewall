@@ -8,7 +8,7 @@ network:
   int: 'vns_recv'
   traffic:
    server:
-     use_pfring: 'True'
+     use_pfring: 'False'
      enabled: 'True'
      disable_output: 'True'
      disable_time_corrector: 'False'
@@ -19,17 +19,17 @@ network:
   int: 'vns_send'
   traffic:
    client:
-     distribution: 'max'
-     intensity: 500000
+     distribution: 'deterministic'
+     intensity: 83333
      npackets: 0
      length: 1500
      direction: '10.50.0.2'
      direction_mac: '02:00:00:00:00:02'
      port: 0
-     use_pfring: 'True'
-     single_thread: 'True'
+     use_pfring: 'False'
+     single_thread: 'False'
      disable_output: 'True'
-     disable_timestamps: 'False'
+     disable_timestamps: 'True'
      measure_latency: 'False'
      sync_time: 0
    server:

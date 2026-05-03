@@ -13,16 +13,16 @@ network:
      disable_output: 'True'
      disable_time_corrector: 'False'
      ports: [0]
-     length: 64
+     length: 512
  client1:
   ip: '10.50.0.1'
   int: 'vns_send'
   traffic:
    client:
      distribution: 'deterministic'
-     intensity: 1953125
+     intensity: 244140
      npackets: 0
-     length: 64
+     length: 512
      direction: '10.50.0.2'
      direction_mac: '02:00:00:00:00:02'
      port: 0

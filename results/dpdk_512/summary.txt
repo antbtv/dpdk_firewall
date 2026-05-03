@@ -1,5 +1,0 @@
-scenario=dpdk size=512
-client_pps=187153
-client_mbs=95.8224
-sent_total=6600000
-generation_time=N/A

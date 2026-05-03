@@ -1,1 +1,0 @@
-bridge_512: sent=6600000, client_pps=176922, client_mbs=90.58, gen_time=37.3s

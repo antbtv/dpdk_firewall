@@ -1,0 +1,4 @@
+scenario=hairpin_dpdk size=1500
+client_pps=83333.3
+sent_total=4999980
+server_received=4920000
