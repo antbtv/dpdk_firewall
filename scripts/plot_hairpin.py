@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plot_hairpin.py — Сравнительные графики: Linux bridge hairpin vs DPDK hairpin.
+plot_hairpin.py — Сравнительные графики: Linux bridge vs DPDK.
 
 Читает данные из results/hairpin_{bridge,dpdk}_{64,512,800,1500}/.
 Выводит PNG-файлы в results/plots/.
@@ -29,7 +29,7 @@ COLORS = {
 }
 LABELS = {
     'bridge': 'Linux bridge (kernel)',
-    'dpdk':   'DPDK AF_XDP hairpin',
+    'dpdk':   'DPDK',
 }
 
 # ---------------------------------------------------------------------------
@@ -198,7 +198,7 @@ def plot_throughput_pps(data):
     ax.yaxis.set_minor_locator(mticker.AutoMinorLocator())
     ax.grid(axis='y', alpha=0.3)
     fig.tight_layout()
-    save(fig, 'hairpin_fig1_throughput_pps.png')
+    save(fig, 'fig1_throughput_pps.png')
 
 
 # ---------------------------------------------------------------------------
@@ -229,7 +229,7 @@ def plot_throughput_mbit(data):
     ax.yaxis.set_minor_locator(mticker.AutoMinorLocator())
     ax.grid(axis='y', alpha=0.3)
     fig.tight_layout()
-    save(fig, 'hairpin_fig2_throughput_mbit.png')
+    save(fig, 'fig2_throughput_mbit.png')
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +259,7 @@ def plot_loss(data):
     ax.yaxis.set_minor_locator(mticker.AutoMinorLocator())
     ax.grid(axis='y', alpha=0.3)
     fig.tight_layout()
-    save(fig, 'hairpin_fig3_packet_loss.png')
+    save(fig, 'fig3_packet_loss.png')
 
 
 # ---------------------------------------------------------------------------
@@ -316,12 +316,12 @@ def plot_advantage(data):
             ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5,
                     label, ha='center', va='bottom', fontsize=9, fontweight='bold')
     ax.set_ylabel('bridge_loss / dpdk_loss')
-    ax.set_title('Снижение потерь в DPDK (во сколько раз)')
+    ax.set_title('Снижение потерь в DPDK')
     ax.grid(axis='y', alpha=0.3)
 
     fig.suptitle('Преимущество DPDK над Linux bridge', fontsize=13, fontweight='bold')
     fig.tight_layout()
-    save(fig, 'hairpin_fig4_advantage.png')
+    save(fig, 'fig4_advantage.png')
 
 
 # ---------------------------------------------------------------------------
@@ -381,9 +381,9 @@ def plot_cpu(data):
         ax.legend(fontsize=8)
         ax.grid(axis='y', alpha=0.3)
 
-    fig.suptitle('Загрузка CPU при hairpin-тесте', fontsize=13, fontweight='bold')
+    fig.suptitle('Загрузка CPU при тесте', fontsize=13, fontweight='bold')
     fig.tight_layout()
-    save(fig, 'hairpin_fig5_cpu.png')
+    save(fig, 'fig5_cpu.png')
 
 
 # ---------------------------------------------------------------------------
@@ -435,10 +435,10 @@ def plot_summary_table(data):
         if col == 1 and row > 0:
             cell.set_facecolor('#e8effe')
 
-    ax.set_title('Итоговые результаты: Linux bridge vs DPDK hairpin',
+    ax.set_title('Итоговые результаты: Linux bridge vs DPDK',
                  fontsize=12, fontweight='bold', pad=15)
     fig.tight_layout()
-    save(fig, 'hairpin_fig6_summary_table.png')
+    save(fig, 'fig6_summary_table.png')
 
 
 # ---------------------------------------------------------------------------
@@ -545,14 +545,16 @@ def plot_ts_figA(scenario):
         return
 
     ax1.set_ylabel('RX Мбит/с')
+    ax1.set_xlim(0, 60)
     ax1.legend(fontsize=9)
     ax1.grid(linestyle='--', alpha=0.4)
     ax2.set_ylabel('RX пакет/с')
+    ax2.set_xlim(0, 60)
     ax2.set_xlabel('Время (с)')
     ax2.legend(fontsize=9)
     ax2.grid(linestyle='--', alpha=0.4)
     fig.tight_layout()
-    save(fig, f'hairpin_figA_netdev_{scenario}.png')
+    save(fig, f'figA_netdev_{scenario}.png')
 
 
 # ---------------------------------------------------------------------------
@@ -561,7 +563,7 @@ def plot_ts_figA(scenario):
 
 def plot_ts_figB(size):
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
-    fig.suptitle(f'RX трафик на enP1p1s0: bridge vs DPDK hairpin — {size} Б', fontsize=11)
+    fig.suptitle(f'RX трафик на enP1p1s0: bridge vs DPDK — {size} Б', fontsize=11)
 
     found = False
     for scenario in SCENARIOS:
@@ -580,13 +582,14 @@ def plot_ts_figB(size):
         return
 
     for ax in (ax1, ax2):
+        ax.set_xlim(0, 60)
         ax.legend(fontsize=9)
         ax.grid(linestyle='--', alpha=0.4)
     ax1.set_ylabel('RX Мбит/с')
     ax2.set_ylabel('RX пакет/с')
     ax2.set_xlabel('Время (с)')
     fig.tight_layout()
-    save(fig, f'hairpin_figB_compare_{size}b.png')
+    save(fig, f'figB_compare_{size}b.png')
 
 
 # ---------------------------------------------------------------------------
@@ -629,8 +632,10 @@ def plot_ts_figC(scenario, size):
         ax.grid(linestyle='--', alpha=0.3)
 
     axes[-1].set_xlabel('Время (с)')
+    for ax in axes:
+        ax.set_xlim(0, 60)
     fig.tight_layout()
-    save(fig, f'hairpin_figC_{scenario}_{size}b.png')
+    save(fig, f'figC_{scenario}_{size}b.png')
 
 
 # ---------------------------------------------------------------------------

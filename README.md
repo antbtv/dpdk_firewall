@@ -72,13 +72,12 @@ IOMMU не требуется: пакет перехватывается вну�
 уже завершена корректно (igb использует Linux DMA API, который знает о 64 ГБ смещении).
 Вся логика фильтрации по-прежнему выполняется в userspace DPDK.
 
-Intel igb поддерживает AF_XDP native mode начиная с Linux 5.9; ядро 6.17 на RPi5
-добавило поддержку AF_XDP zero-copy для igb (Linux 6.14). Попытка zero-copy, однако,
-оказалась неуспешной из-за той же DMA-проблемы BCM2712 (UMEM-страницы не регистрируются
-для DMA). Применяется режим `force_copy=1` (copy mode), при котором XDP-хук всё равно
-обеспечивает перехват до sk_buff, а UMEM-транспорт управляется ядром.
+Intel igb поддерживает AF_XDP native mode начиная с Linux 5.9. Попытка zero-copy оказалась
+неуспешной из-за той же DMA-проблемы BCM2712 (UMEM-страницы не регистрируются для DMA).
+Применяется режим `force_copy=1` (copy mode), при котором XDP-хук всё равно обеспечивает
+перехват до sk_buff, а UMEM-транспорт управляется ядром.
 
-LAN-порт (eth0, macb) не поддерживает XDP native mode в ядре 6.17 — остаётся на AF_PACKET.
+LAN-порт (eth0, macb) не поддерживает XDP native mode — остаётся на AF_PACKET.
 
 Итог: **895 Мбит/с** (×89 относительно AF_PACKET), 0 ретрансмитов, задержка 0.35 мс.
 
@@ -96,9 +95,6 @@ LAN-порт (eth0, macb) не поддерживает XDP native mode в яд�
 остаются под штатными kernel-драйверами. В `main.c` реализовано автоматическое
 определение: если в конфиге указано имя интерфейса (не PCI-адрес), добавляются
 `--vdev eth_af_packet0,iface=<wan>` / `--vdev eth_af_packet1,iface=<lan>`.
-
-Собран тестовый стенд: Dev PC (10.99.0.1) — RPi5 WAN — RPi5 LAN — Raspberry Pi 4
-(10.99.0.2). Измерена базовая пропускная способность: **12 Мбит/с** (AF_PACKET PMD).
 
 ### Движок правил
 
@@ -178,6 +174,39 @@ PCIe DMA offset. Результат отрицательный, откат к `f
 
 ---
 
+## Топология тестового стенда
+
+Сравнительный бенчмарк использует hairpin-топологию: два namespace на Dev PC с macvlan VEPA
+на интерфейсе `eno1`. Трафик уходит на RPi5, отражается обратно (hairpin) и возвращается
+в `ns_recv`. Raspi4 исключён из пути.
+
+```
+Dev PC                                      Raspberry Pi 5
+┌──────────────────────────────┐            ┌─────────────────────┐
+│  ns_send  (10.50.0.1/24)     │            │                     │
+│  vns_send ──┐                │            │  Linux bridge br0   │
+│             ├── eno1 ────────┼────────────┼── enP1p1s0          │
+│  vns_recv ──┘                │            │    (hairpin on)     │
+│  ns_recv  (10.50.0.2/24)     │            │                     │
+└──────────────────────────────┘            │  DPDK AF_XDP        │
+                                            │  (--hairpin mode)   │
+                                            └─────────────────────┘
+```
+
+Путь пакета: `ns_send → vns_send → eno1 → enP1p1s0 → [hairpin] → enP1p1s0 → eno1 → vns_recv → ns_recv`
+
+### Подготовка Dev PC (один раз после перезагрузки)
+
+```bash
+# Создать namespaces + macvlan VEPA интерфейсы:
+sudo ./scripts/setup_hairpin_devpc.sh setup
+
+# Проверить:
+sudo ip netns list   # → ns_recv, ns_send
+```
+
+---
+
 ## Архитектура
 
 ### Модель lcore
@@ -189,7 +218,8 @@ PCIe DMA offset. Результат отрицательный, откат к `f
 | 2 | LAN→WAN | порт 1 RX -> pipeline -> порт 0 TX |
 | 3 | Резерв | не используется |
 
-
+В hairpin-режиме (`--hairpin`) используется один порт и два lcore: lcore 0 (управление)
+и lcore 1 (RX → pipeline → TX на тот же порт).
 
 ### Пайплайн (7 стадий, burst = 32 пакета)
 
@@ -255,6 +285,9 @@ PCIe DMA offset. Результат отрицательный, откат к `f
 
 Горячая перезагрузка: `sudo kill -HUP $(pgrep dpdk_firewall)` или `fw_ctl config reload`.
 
+Для hairpin-бенчмарка используется `config/bench_hairpin.json` — один порт (`enP1p1s0`),
+0 правил, default policy ACCEPT.
+
 ---
 
 ## Сборка
@@ -285,6 +318,12 @@ ninja -C build
 
 # Подготовка + запуск с кастомным конфигом:
 ./run.sh start config/bench_baseline.json
+
+# Подготовка + запуск в hairpin-режиме (один порт, для бенчмарка):
+./run.sh hairpin
+
+# Hairpin с кастомным конфигом:
+./run.sh hairpin config/bench_hairpin.json
 ```
 
 При ручном запуске необходимо соблюдать следующий порядок:
@@ -336,153 +375,33 @@ fw_ctl set-policy drop
 
 ---
 
-## Результаты измерений
+## Бенчмарк: Linux bridge vs DPDK
 
-Платформа: Raspberry Pi 5 (ARM Cortex-A76, 4 ядра @ 2.4 ГГц, 8 ГБ RAM).
-NIC WAN: Intel I210 (igb), NIC LAN: BCM54213PE (macb).
-DPDK 24.11.3, ядро 6.17.0-1008-raspi (aarch64).
+Сравниваются два способа hairpin-форвардинга на RPi5:
 
-Топология:
-```
-Dev PC (10.99.0.1, eno1) ──── enP1p1s0 ──── RPi5 ──── eth0 ──── raspi4 (10.99.0.2)
-```
+- **Linux bridge**: `br0` + `bridge link set dev enP1p1s0 hairpin on`
+- **DPDK**: `./run.sh hairpin` (AF_XDP PMD, `--hairpin`)
 
-### Пропускная способность (iperf3 TCP)
-
-| PMD | Мбит/с | Ретрансм./10с | RTT avg |
-|-----|-------:|-------------:|--------:|
-| AF_PACKET | ~12 | 2333 | 0.85 мс |
-| AF_XDP (force_copy=1) | **895** | **0** | **0.35 мс** |
-
-Улучшение: **×89**. AF_XDP достигает 89.5% от физической скорости канала.
-
-### Накладные расходы ACL и DDoS (AF_XDP)
-
-| Сценарий | Мбит/с | Ретрансм. |
-|----------|-------:|----------:|
-| 0 правил, DDoS выкл | 882 | 0 |
-| 10 правил DROP | 873 | 0 |
-| 100 правил DROP | 846 | 0 |
-| 1 правило + DDoS вкл | 842 | 0 |
-
-Накладные расходы в пределах погрешности (~5%): узкое место — физический канал, не CPU.
-
-### Задержка (AF_XDP, ping -i 0.002 -c 2000)
-
-| Нагрузка | p50 RTT | p99 RTT |
-|----------|--------:|--------:|
-| 0% | 0.175 мс | 0.207 мс |
-| 90% (805 Мбит/с) | 0.420 мс | 0.783 мс |
-
-p99 < 1 мс при нагрузке 90% — forwarding-путь стабилен у насыщения канала.
-
-### DDoS-детекция (hping3 --flood)
-
-Конфиг: `window_ms=100`, `syn_threshold=100`, `udp_threshold=500`.
-
-| Тип атаки | Время обнаружения | Отброшено |
-|-----------|------------------:|----------:|
-| SYN flood | ≤ 100 мс | 99.9% |
-| UDP flood | ≤ 100 мс | 99.9% |
-
-### Утилизация CPU RPi5 при форвардинге (AF_XDP)
-
-| lcore | Роль | %usr | %sys | %idle |
-|-------|------|-----:|-----:|------:|
-| 0 | control plane | ~1 | ~3 | ~95 |
-| 1 | LAN→WAN (AF_PACKET) | ~10 | ~90 | 0 |
-| 2 | WAN→LAN (AF_XDP) | **100** | 0 | 0 |
-| 3 | резерв | ~1 | ~3 | ~96 |
-
-lcore 2: 100% usr — AF_XDP busy-poll без syscall на пакет.
-lcore 1: 90% sys — AF_PACKET требует syscall на каждый burst (LAN-порт без XDP).
-
----
-
-### Сравнительный бенчмарк: Linux bridge vs DPDK AF_XDP (t-raf, 2026-04-17)
-
-Инструмент: t-raf (RAW IP proto 253, deterministic distribution, 30 с).
-Метрика: pkt/s на raspi4 (t-raf server, SOCK_RAW, однопоточный).
-DPDK: 0 правил, DDoS отключён, default policy ACCEPT.
-
-| Размер | Отправлено | Bridge server pkt/s | DPDK server pkt/s | DPDK dropped |
-|--------|----------:|--------------------:|------------------:|-------------:|
-| 64 Б  | 4 500 000 | **95 333** | **94 667** | **0** |
-| 512 Б | 6 600 000 | **94 906** | **94 458** | **0** |
-| 800 Б | 4 200 000 | **95 883** | **96 140** | **0** |
-| 1500 Б| 2 250 000 | **75 000** | **75 000** | **0** |
-
-**DPDK dropped=0** во всех тестах — firewall пересылает 100% входящих пакетов.
-
-**Bottleneck — raspi4, не форвардер.** Расхождение bridge/DPDK (~7–8% при 64–800 Б)
-объясняется не технологией форвардинга, а разным состоянием CPU governor на raspi4
-(thermal throttling Cortex-A72 @ 1.4 ГГц) в разных запусках.
-Прямое измерение: t-raf server упирается в ~88–96k pkt/s независимо от форвардера —
-это жёсткий потолок однопоточного `recvfrom(SOCK_RAW)` на Cortex-A72: один syscall
-занимает ~10–11 мкс, 90% времени ядра на одном ядре, три ядра простаивают.
-При 1500 Б оба сценария дают одинаковый результат (75k = line rate 1 Гбит/с).
-
----
-
-## Воспроизведение замеров (64-байтные пакеты)
-
-Конфиг t-raf: `config/traf/traf_64.yml` (150 000 pkt/s, 30 с, RAW, deterministic).
-Скопировать на raspi4 и Dev PC заранее.
-
-### Сценарий 1: Linux bridge
+Инструмент: [t-raf](https://github.com/aguinet/t-raf), RAW-режим (IP proto 253),
+deterministic distribution, 60 секунд. Конфиги: `config/traf/traf_hairpin_*.yml`.
 
 ```bash
-# === RPi5 ===
-# Настроить bridge (если не настроен):
-sudo ip link add br0 type bridge 2>/dev/null || true
-sudo ip link set enP1p1s0 master br0
-sudo ip link set eth0 master br0
-sudo ip link set br0 up
-sudo ip link set enP1p1s0 up
-sudo ip link set eth0 up
-# Убедиться, что dpdk_firewall НЕ запущен.
+# Подготовка Dev PC (один раз):
+sudo ./scripts/setup_hairpin_devpc.sh setup
 
-# Запустить сбор метрик (в отдельном терминале):
-./scripts/collect_metrics.sh 38 results/bridge_64/metrics enP1p1s0 &
+# Запуск сервера (ns_recv):
+sudo ip netns exec ns_recv ~/diploma/t-raf/build/t-raf \
+  config/traf/traf_hairpin_64.yml server1
 
-# === raspi4 (один раз) ===
-sudo ip addr add 10.99.0.2/24 dev eth0 2>/dev/null || true                                                                                                                               
-sudo ip link set eth0 up                                                                                                                                                                 
-                                
-# === raspi4 (параллельно) ===
-sudo ./t-raf/build/t-raf ~/traf_64.yml server1
-# Записать итоговое число (received count) из вывода.
-
-# === Dev PC (после запуска сервера) ===
-sudo ../t-raf config/traf/traf_64.yml client1
+# Запуск клиента (ns_send):
+sudo ip netns exec ns_send ~/diploma/t-raf/build/t-raf \
+  config/traf/traf_hairpin_64.yml client1
 ```
 
-### Сценарий 2: DPDK 
+Результаты и графики — в папке `results/`. Построить графики:
 
 ```bash
-# === RPi5 ===
-# Запустить firewall (hugepages, igb, RSS=1, xdp off — всё внутри run.sh):
-./run.sh start
-
-# Запустить сбор метрик (в новом терминале RPi5):
-./scripts/collect_metrics.sh 38 results/dpdk_64/metrics enP1p1s0 &
-
-# === raspi4 (параллельно) ===
-sudo ~/t-raf/build/t-raf ~/traf_64.yml server1
-
-# === Dev PC (после запуска сервера) ===
-sudo ./t-raf config/traf/traf_64.yml client1
-```
-
-После каждого теста скопировать метрики с RPi5:
-```bash
-rsync -av anton@<rpi5_ip>:~/diploma/dpdk_firewall/results/bridge_64/ results/bridge_64/
-rsync -av anton@<rpi5_ip>:~/diploma/dpdk_firewall/results/dpdk_64/   results/dpdk_64/
-```
-
-Построить графики:
-```bash
-python3 scripts/plot_benchmarks.py
+python3 scripts/plot_hairpin.py
 ```
 
 ---
@@ -496,7 +415,7 @@ BCM2712 PCIe накладывает фундаментальные ограни�
 - 64 ГБ DMA offset в dma-ranges -> uio_pci_generic + DPDK PA mode работают некорректно;
 - AF_XDP zero-copy требует регистрации UMEM-страниц как DMA-буферов (xsk_pool_dma_map),
   что завершается с ошибкой по той же причине;
-- macb (eth0, LAN) не поддерживает XDP native mode на ядре 6.17 -> LAN остаётся на AF_PACKET.
+- macb (eth0, LAN) не поддерживает XDP native mode -> LAN остаётся на AF_PACKET.
 
 Тот же код на x86 с vfio-pci на нативном PMD обеспечивает линейную скорость 10+ Гбит/с.
 Результат 895 Мбит/с на RPi5 достигнут исключительно за счёт AF_XDP как транспортного
