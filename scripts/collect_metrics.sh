@@ -100,11 +100,11 @@ echo "[collect_metrics] done: files written to ${PREFIX}_*.log"
 
 # --- Краткая сводка в stdout ---
 echo ""
-echo "=== CPU summary (avg across duration) ==="
+echo "=== Сводка по CPU (среднее за период) ==="
 grep "^Average" "${PREFIX}_cpu.log" | head -8
 
 if [ -n "$IFACE" ]; then
     echo ""
-    echo "=== Net interface ${IFACE} (last snapshot) ==="
+    echo "=== Сетевой интерфейс ${IFACE} (последний снимок) ==="
     grep "$IFACE" "${PREFIX}_netdev.log" | tail -1
 fi

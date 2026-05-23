@@ -76,6 +76,7 @@ run_scenario() {
         local OUTDIR="results/hairpin_${SCENARIO}_${SIZE}"
 
         mkdir -p "$OUTDIR"
+        mkdir -p "results/${SIZE}"   # t-raf пишет CSV сюда (output_directory в конфиге)
 
         echo "--------------------------------------------------------"
         echo "Тест: hairpin_${SCENARIO} / ${SIZE}B"
@@ -112,6 +113,12 @@ run_scenario() {
         rm -f "$SRV_TMP"
         echo "$RECEIVED" > "${OUTDIR}/server_received.txt"
         echo "  Сервер принял: $RECEIVED пакетов"
+
+        # Перекладываем CSV-файлы t-raf в папку теста
+        mv -f "results/${SIZE}/client1-sent.csv"  "${OUTDIR}/traf_sent.csv"  2>/dev/null && \
+            echo "  Сохранён: ${OUTDIR}/traf_sent.csv" || true
+        mv -f "results/${SIZE}/server1-0-rcv.csv" "${OUTDIR}/traf_rcv.csv"   2>/dev/null && \
+            echo "  Сохранён: ${OUTDIR}/traf_rcv.csv"  || true
 
         # Ключевые цифры клиента
         CLIENT_PPS=$(awk '/^Speed:/{print $2}' "${OUTDIR}/client.txt" || echo "N/A")
