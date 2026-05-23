@@ -20,16 +20,16 @@
 #include "mgmt.h"
 #include "log.h"
 
-/* ─── Global state ──────────────────────────────────────────────────────── */
+/* ─── Глобальное состояние ──────────────────────────────────────────────── */
 
 volatile fw_action_t   g_default_policy = ACTION_DROP;
 volatile int           g_force_quit     = 0;
 volatile sig_atomic_t  g_sighup_flag    = 0;
 
-/* Per-lcore pipeline arguments (static lifetime — passed to remote lcores) */
+/* Аргументы конвейера на lcore (статическое время жизни — передаются удалённым lcore) */
 static struct pipeline_args s_pipe_args[RTE_MAX_LCORE];
 
-/* ─── Signal handlers ───────────────────────────────────────────────────── */
+/* ─── Обработчики сигналов ──────────────────────────────────────────────── */
 
 static void
 handle_sigint(int sig)
@@ -45,7 +45,7 @@ handle_sighup(int sig)
     g_sighup_flag = 1;
 }
 
-/* ─── Argument parsing ──────────────────────────────────────────────────── */
+/* ─── Разбор аргументов ─────────────────────────────────────────────────── */
 
 static void
 print_usage(const char *prog)
@@ -55,7 +55,7 @@ print_usage(const char *prog)
             prog);
 }
 
-/** Map log-level string to RTE_LOG_* constant. Returns RTE_LOG_INFO on unknown. */
+/** Преобразовать строку уровня лога в константу RTE_LOG_*. При неизвестном значении возвращает RTE_LOG_INFO. */
 static int
 str_to_log_level(const char *s)
 {
@@ -70,9 +70,9 @@ str_to_log_level(const char *s)
 }
 
 /**
- * Pre-scan argv for --config and --log-level WITHOUT consuming them.
- * @param cli_log_level_out  -1 if --log-level was not provided.
- * @return 0 on success, -1 if --config is missing.
+ * Предварительно просмотреть argv для поиска --config и --log-level БЕЗ их потребления.
+ * @param cli_log_level_out  -1 если --log-level не был указан.
+ * @return 0 при успехе, -1 если --config отсутствует.
  */
 static int
 prescan_args(int argc, char *argv[],
@@ -80,7 +80,7 @@ prescan_args(int argc, char *argv[],
              int *cli_log_level_out)
 {
     *config_path_out  = NULL;
-    *cli_log_level_out = -1;   /* -1 means "not specified, use config file value" */
+    *cli_log_level_out = -1;   /* -1 означает "не указан, использовать значение из конфига" */
 
     for (int i = 1; i < argc - 1; i++) {
         if (strcmp(argv[i], "--config") == 0)
@@ -97,7 +97,7 @@ prescan_args(int argc, char *argv[],
     return 0;
 }
 
-/** Returns 1 if s looks like a PCIe address (DDDD:BB:SS.F). */
+/** Возвращает 1 если s похоже на адрес PCIe (DDDD:BB:SS.F). */
 static int
 is_pci_addr(const char *s)
 {
@@ -115,15 +115,15 @@ is_pci_addr(const char *s)
 }
 
 /**
- * Minimal JSON parse to extract port configuration from the config file.
- * Called BEFORE rte_eal_init so we can build the --allow/--vdev list.
+ * Минимальный разбор JSON для извлечения конфигурации портов из файла.
+ * Вызывается ДО rte_eal_init, чтобы собрать список --allow/--vdev.
  *
- * Each of "wan"/"lan" in config "ports" can be:
- *   - a PCI address ("0001:01:00.0") → written to *_pci_out
- *   - an interface name ("enP1p1s0", "eth0") → written to *_iface_out
- *   - the keyword "builtin" (lan only) → treated as iface "eth0"
+ * Каждое из полей "wan"/"lan" в секции "ports" конфига может быть:
+ *   - адресом PCI ("0001:01:00.0") → записывается в *_pci_out
+ *   - именем интерфейса ("enP1p1s0", "eth0") → записывается в *_iface_out
+ *   - ключевым словом "builtin" (только для lan) → трактуется как iface "eth0"
  *
- * Exactly one of *_pci_out / *_iface_out will be non-empty per port.
+ * Ровно один из *_pci_out / *_iface_out будет непустым для каждого порта.
  */
 static int
 extract_pci_addrs(const char *path,
@@ -174,12 +174,12 @@ extract_pci_addrs(const char *path,
     return 0;
 }
 
-/* ─── Entry point ───────────────────────────────────────────────────────── */
+/* ─── Точка входа ───────────────────────────────────────────────────────── */
 
 int
 main(int argc, char *argv[])
 {
-    /* ── Step 1: Pre-scan app args ──────────────────────────────────────── */
+    /* ── Шаг 1: Предварительный просмотр аргументов приложения ─────────── */
     const char *config_path   = NULL;
     int         cli_log_level = -1;
 
@@ -194,7 +194,7 @@ main(int argc, char *argv[])
         }
     }
 
-    /* ── Step 2: Extract port configuration (no EAL yet) ────────────────── */
+    /* ── Шаг 2: Извлечение конфигурации портов (EAL ещё не инициализирован) */
     char wan_pci[32], wan_iface[32];
     char lan_pci[32], lan_iface[32];
     if (extract_pci_addrs(config_path,
@@ -204,24 +204,24 @@ main(int argc, char *argv[])
                           lan_iface, sizeof(lan_iface)) != 0)
         return EXIT_FAILURE;
 
-    /* ── Step 3: Build synthetic EAL argv ───────────────────────────────── */
+    /* ── Шаг 3: Формирование синтетического argv для EAL ────────────────── */
     /*
-     * rte_eal_init() needs writable, null-terminated strings.
-     * Use a fixed 2-D array on the stack; each slot is EAL_ARG_LEN bytes.
+     * rte_eal_init() требует записываемых строк, завершённых нулём.
+     * Используется фиксированный двумерный массив на стеке; каждый слот — EAL_ARG_LEN байт.
      *
-     * Port mapping (in probing order):
-     *   PCI ports come before vdev ports in DPDK probing order.
-     *   vdev ports are probed in the order of --vdev arguments.
-     *   So: first WAN entry → port 0, second LAN entry → port 1.
+     * Порядок портов (в порядке зондирования):
+     *   PCI-порты обнаруживаются раньше vdev-портов в порядке зондирования DPDK.
+     *   vdev-порты зондируются в порядке аргументов --vdev.
+     *   Поэтому: первая запись WAN → порт 0, вторая запись LAN → порт 1.
      *
-     * Maximum args: 9 (prog + --proc-type primary + 2×(--allow|--vdev X))
+     * Максимум аргументов: 9 (prog + --proc-type primary + 2×(--allow|--vdev X))
      */
 #define EAL_MAX_ARGS 16
 #define EAL_ARG_LEN  64
     char  eal_storage[EAL_MAX_ARGS][EAL_ARG_LEN];
     char *eal_argv[EAL_MAX_ARGS];
     int   eal_argc  = 0;
-    int   vdev_idx  = 0;   /* index suffix for PMD vdev names */
+    int   vdev_idx  = 0;   /* суффикс индекса для имён PMD vdev */
     char  vdev_arg[EAL_ARG_LEN];
 
 #define EAL_PUSH(str) \
@@ -235,19 +235,19 @@ main(int argc, char *argv[])
     EAL_PUSH("--proc-type");
     EAL_PUSH("primary");
 
-    /* WAN port */
+    /* Порт WAN */
     if (wan_pci[0]) {
         EAL_PUSH("--allow"); EAL_PUSH(wan_pci);
     } else if (wan_iface[0]) {
-        /* BCM2712 PCIe has no IOMMU → uio_pci_generic DMA fails (64 GB
-         * address offset).  Keep the NIC under the kernel igb driver and
-         * reach it via AF_PACKET sockets — no rebinding needed. */
+        /* BCM2712 PCIe не имеет IOMMU → DMA через uio_pci_generic не работает
+         * (смещение адреса 64 ГБ). Оставить NIC под драйвером ядра igb и
+         * обращаться через AF_PACKET-сокеты — перепривязка драйвера не нужна. */
         snprintf(vdev_arg, sizeof(vdev_arg),
                  "net_af_xdp0,iface=%s,force_copy=1", wan_iface);
         EAL_PUSH("--vdev"); EAL_PUSH(vdev_arg);
     }
 
-    /* LAN port */
+    /* Порт LAN */
     if (lan_pci[0]) {
         EAL_PUSH("--allow"); EAL_PUSH(lan_pci);
     } else if (lan_iface[0]) {
@@ -258,35 +258,35 @@ main(int argc, char *argv[])
 
 #undef EAL_PUSH
 
-    /* ── Step 4: DPDK EAL init ──────────────────────────────────────────── */
+    /* ── Шаг 4: Инициализация DPDK EAL ─────────────────────────────────── */
     int ret = rte_eal_init(eal_argc, eal_argv);
     if (ret < 0)
         rte_exit(EXIT_FAILURE, "rte_eal_init failed: %s\n",
                  rte_strerror(rte_errno));
 
-    /* ── Step 5: Initialise logging subsystem ───────────────────────────── */
+    /* ── Шаг 5: Инициализация подсистемы логирования ───────────────────── */
     if (fw_log_init() != 0)
         rte_exit(EXIT_FAILURE, "fw_log_init failed\n");
 
-    /* ── Step 6: Load full configuration ────────────────────────────────── */
+    /* ── Шаг 6: Загрузка полной конфигурации ────────────────────────────── */
     if (config_load(config_path) != 0)
         rte_exit(EXIT_FAILURE, "Failed to load config: %s\n", config_path);
 
     /*
-     * Log level priority: CLI --log-level > config file "logging.level".
-     * CLI value of -1 means "not specified" → use config file value.
+     * Приоритет уровня лога: CLI --log-level > значение "logging.level" из конфига.
+     * Значение -1 из CLI означает "не указан" → использовать значение из конфига.
      */
     int effective_level = (cli_log_level >= 0) ? cli_log_level
                                                : g_fw_config.log_level;
     rte_log_set_level(fw_logtype, (uint32_t)effective_level);
 
-    /* ── Step 7: Verify lcore layout ────────────────────────────────────── */
+    /* ── Шаг 7: Проверка раскладки lcore ───────────────────────────────── */
     if (!rte_lcore_is_enabled(1) ||
         (!hairpin_mode && !rte_lcore_is_enabled(2)))
         rte_exit(EXIT_FAILURE,
                  "Need at least 3 lcores (0=control, 1=WAN->LAN, 2=LAN->WAN)\n");
 
-    /* ── Step 8: Initialise modules ─────────────────────────────────────── */
+    /* ── Шаг 8: Инициализация модулей ───────────────────────────────────── */
     stats_init();
 
     if (port_init_all(hairpin_mode ? 1 : 2) != 0)
@@ -298,7 +298,7 @@ main(int argc, char *argv[])
     ddos_init(&g_fw_config.ddos_cfg);
     meter_init_all();
 
-    /* ── Step 9: Install signal handlers ────────────────────────────────── */
+    /* ── Шаг 9: Установка обработчиков сигналов ─────────────────────────── */
     struct sigaction sa_quit = { .sa_handler = handle_sigint,  .sa_flags = 0 };
     struct sigaction sa_hup  = { .sa_handler = handle_sighup,  .sa_flags = 0 };
     sigemptyset(&sa_quit.sa_mask);
@@ -307,9 +307,9 @@ main(int argc, char *argv[])
     sigaction(SIGTERM, &sa_quit, NULL);
     sigaction(SIGHUP,  &sa_hup,  NULL);
 
-    /* ── Step 10: Launch forwarding lcores ──────────────────────────────── */
+    /* ── Шаг 10: Запуск lcores пересылки ────────────────────────────────── */
     if (hairpin_mode) {
-        /* Hairpin mode: port 0 → port 0 (single-port loopback for testing) */
+        /* Режим hairpin: порт 0 → порт 0 (однопортовая петля для тестирования) */
         s_pipe_args[1].port_in  = 0;
         s_pipe_args[1].port_out = 0;
         ret = rte_eal_remote_launch(pipeline_lcore_main, &s_pipe_args[1], 1);
@@ -318,7 +318,7 @@ main(int argc, char *argv[])
                      rte_strerror(-ret));
         RTE_LOG_FW_INFO("Hairpin mode: port 0 → port 0\n");
     } else {
-        /* lcore 1: WAN (port 0) → LAN (port 1) */
+        /* lcore 1: WAN (порт 0) → LAN (порт 1) */
         s_pipe_args[1].port_in  = 0;
         s_pipe_args[1].port_out = 1;
         ret = rte_eal_remote_launch(pipeline_lcore_main, &s_pipe_args[1], 1);
@@ -326,7 +326,7 @@ main(int argc, char *argv[])
             rte_exit(EXIT_FAILURE, "Failed to launch lcore 1: %s\n",
                      rte_strerror(-ret));
 
-        /* lcore 2: LAN (port 1) → WAN (port 0) */
+        /* lcore 2: LAN (порт 1) → WAN (порт 0) */
         s_pipe_args[2].port_in  = 1;
         s_pipe_args[2].port_out = 0;
         ret = rte_eal_remote_launch(pipeline_lcore_main, &s_pipe_args[2], 2);
@@ -337,10 +337,10 @@ main(int argc, char *argv[])
 
     RTE_LOG_FW_INFO("dpdk_firewall started — lcore 0 running control plane\n");
 
-    /* ── Step 11: Control plane loop on lcore 0 (blocking) ─────────────── */
+    /* ── Шаг 11: Цикл плоскости управления на lcore 0 (блокирующий) ────── */
     mgmt_server_run();
 
-    /* ── Step 12: Cleanup ───────────────────────────────────────────────── */
+    /* ── Шаг 12: Очистка ────────────────────────────────────────────────── */
     RTE_LOG_FW_INFO("Shutting down...\n");
 
     rte_eal_wait_lcore(1);

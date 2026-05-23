@@ -13,15 +13,15 @@
 #include "ddos.h"
 #include "log.h"
 
-/* ─── Stub globals (normally defined in main.c) ─────────────────────────── */
+/* ─── Заглушки глобальных переменных (обычно определяются в main.c) ─────── */
 
 volatile fw_action_t g_default_policy = ACTION_DROP;
 volatile int         g_force_quit     = 0;
 
 /*
- * meter_init_all() in ddos.c calls rule_list().
- * test_ddos does not link rule_engine.c — provide a stub that returns
- * an empty rule set so meter_init_all() is a no-op in these tests.
+ * meter_init_all() в ddos.c вызывает rule_list().
+ * test_ddos не компонуется с rule_engine.c — предоставить заглушку, возвращающую
+ * пустой набор правил, чтобы meter_init_all() был no-op в этих тестах.
  */
 int
 rule_list(struct fw_rule *rules_out, uint32_t *n_out)
@@ -31,22 +31,22 @@ rule_list(struct fw_rule *rules_out, uint32_t *n_out)
     return 0;
 }
 
-/* ─── DDoS config used by all tests ─────────────────────────────────────── */
+/* ─── Конфигурация DDoS, используемая во всех тестах ────────────────────── */
 
 /*
- * Low thresholds make tests fast (no need to send millions of packets).
- * window_ns is large (1 s) to prevent accidental expiry during a test.
+ * Низкие пороги делают тесты быстрыми (не нужно отправлять миллионы пакетов).
+ * window_ns большой (1 с), чтобы предотвратить случайное истечение окна во время теста.
  */
 static const struct ddos_config test_cfg = {
     .enabled           = 1,
-    .window_ns         = 1000000000ULL,          /* 1 second */
+    .window_ns         = 1000000000ULL,          /* 1 секунда */
     .syn_threshold     = 100,
     .udp_threshold     = 1000,
     .icmp_threshold    = 500,
-    .block_duration_ns = 300ULL * 1000000000ULL, /* 300 s */
+    .block_duration_ns = 300ULL * 1000000000ULL, /* 300 с */
 };
 
-/* ─── Helpers ────────────────────────────────────────────────────────────── */
+/* ─── Вспомогательные функции ────────────────────────────────────────────── */
 
 static struct pkt_meta
 make_syn(uint32_t src_ip)
@@ -71,37 +71,37 @@ make_udp(uint32_t src_ip)
     return m;
 }
 
-/* ─── Test 1 ─────────────────────────────────────────────────────────────── */
+/* ─── Тест 1 ─────────────────────────────────────────────────────────────── */
 /*
- * SYN flood: exactly syn_threshold SYN packets must NOT trigger blacklist;
- * the (threshold+1)-th packet must auto-blacklist the source IP.
+ * SYN-флуд: ровно syn_threshold SYN-пакетов НЕ должны вызывать занесение в чёрный список;
+ * (threshold+1)-й пакет должен автоматически заблокировать исходный IP.
  *
- * ddos_update() blacklists when ++syn_count > syn_threshold, so:
- *   - after 100 SYNs: syn_count=100, 100>100 is FALSE → not blacklisted
- *   - after 101st SYN: syn_count=101, 101>100 is TRUE → blacklisted
+ * ddos_update() блокирует при ++syn_count > syn_threshold, то есть:
+ *   - после 100 SYN: syn_count=100, 100>100 — ЛОЖЬ → не заблокирован
+ *   - после 101-го SYN: syn_count=101, 101>100 — ИСТИНА → заблокирован
  */
 static void
 test_syn_flood(void)
 {
-    uint32_t ip = 0x01020304u;   /* 1.2.3.4, unique per test */
+    uint32_t ip = 0x01020304u;   /* 1.2.3.4, уникальный для каждого теста */
     struct pkt_meta m = make_syn(ip);
 
     for (uint64_t i = 0; i < test_cfg.syn_threshold; i++)
         ddos_update(ip, &m, 0);
     assert(blacklist_check(ip, rte_get_tsc_cycles()) == 0);
 
-    ddos_update(ip, &m, 0);     /* (threshold+1)-th SYN */
+    ddos_update(ip, &m, 0);     /* (threshold+1)-й SYN */
     assert(blacklist_check(ip, rte_get_tsc_cycles()) == 1);
 
     printf("  test 1 PASS: %llu SYNs → blacklisted\n",
            (unsigned long long)test_cfg.syn_threshold + 1);
 }
 
-/* ─── Test 2 ─────────────────────────────────────────────────────────────── */
+/* ─── Тест 2 ─────────────────────────────────────────────────────────────── */
 /*
- * Window reset: send syn_threshold/2 SYNs in window A (now_ns=0),
- * then syn_threshold/2 SYNs in window B (now_ns = window_ns+1).
- * The counter must reset at the window boundary, so the IP is never blacklisted.
+ * Сброс окна: отправить syn_threshold/2 SYN-пакетов в окне A (now_ns=0),
+ * затем syn_threshold/2 SYN-пакетов в окне B (now_ns = window_ns+1).
+ * Счётчик должен сбрасываться на границе окна, поэтому IP никогда не блокируется.
  */
 static void
 test_window_reset(void)
@@ -110,27 +110,27 @@ test_window_reset(void)
     struct pkt_meta m = make_syn(ip);
     uint64_t half = test_cfg.syn_threshold / 2;
 
-    /* Phase A — window [0, window_ns) */
+    /* Фаза A — окно [0, window_ns) */
     for (uint64_t i = 0; i < half; i++)
         ddos_update(ip, &m, 0);
     assert(blacklist_check(ip, rte_get_tsc_cycles()) == 0);
 
-    /* Phase B — new window starts; counters reset to 0 */
+    /* Фаза B — начинается новое окно; счётчики сбрасываются в 0 */
     uint64_t t_new = test_cfg.window_ns + 1;
     for (uint64_t i = 0; i < half; i++)
         ddos_update(ip, &m, t_new);
 
-    /* Only half the threshold accumulated in the new window → not blocked */
+    /* В новом окне накоплена только половина порога → не заблокирован */
     assert(blacklist_check(ip, rte_get_tsc_cycles()) == 0);
 
     printf("  test 2 PASS: window reset at %llu ns, counters cleared\n",
            (unsigned long long)test_cfg.window_ns);
 }
 
-/* ─── Test 3 ─────────────────────────────────────────────────────────────── */
+/* ─── Тест 3 ─────────────────────────────────────────────────────────────── */
 /*
- * Expired TTL: blacklist_add() with expire_cycles already in the past.
- * blacklist_check() must perform lazy deletion and return 0.
+ * Истёкший TTL: blacklist_add() с expire_cycles уже в прошлом.
+ * blacklist_check() должен выполнить ленивое удаление и вернуть 0.
  */
 static void
 test_expired_ttl(void)
@@ -138,8 +138,8 @@ test_expired_ttl(void)
     uint32_t ip = 0x03020304u;   /* 3.2.3.4 */
 
     /*
-     * expire_cycles = rte_get_tsc_cycles() - 1 is guaranteed to be in the
-     * past at the time of the subsequent blacklist_check() call.
+     * expire_cycles = rte_get_tsc_cycles() - 1 гарантированно находится в прошлом
+     * на момент последующего вызова blacklist_check().
      */
     uint64_t past = rte_get_tsc_cycles() - 1;
     blacklist_add(ip, past);
@@ -149,16 +149,16 @@ test_expired_ttl(void)
     printf("  test 3 PASS: expired TTL → lazy removal, not blocked\n");
 }
 
-/* ─── Test 4 ─────────────────────────────────────────────────────────────── */
+/* ─── Тест 4 ─────────────────────────────────────────────────────────────── */
 /*
- * blacklist_del() — manually remove an active blacklist entry.
+ * blacklist_del() — вручную удалить активную запись из чёрного списка.
  */
 static void
 test_blacklist_del(void)
 {
     uint32_t ip = 0x04020304u;   /* 4.2.3.4 */
 
-    blacklist_add(ip, UINT64_MAX);   /* far-future expiry */
+    blacklist_add(ip, UINT64_MAX);   /* истечение в далёком будущем */
     assert(blacklist_check(ip, rte_get_tsc_cycles()) == 1);
 
     blacklist_del(ip);
@@ -167,10 +167,10 @@ test_blacklist_del(void)
     printf("  test 4 PASS: blacklist_del() removes active entry\n");
 }
 
-/* ─── Test 5 ─────────────────────────────────────────────────────────────── */
+/* ─── Тест 5 ─────────────────────────────────────────────────────────────── */
 /*
- * UDP flood: analogous to test 1 but for the UDP counter.
- * (threshold+1) UDP packets must trigger auto-blacklist.
+ * UDP-флуд: аналогично тесту 1, но для счётчика UDP.
+ * (threshold+1) UDP-пакетов должны вызвать автоматическое занесение в чёрный список.
  */
 static void
 test_udp_flood(void)
@@ -186,7 +186,7 @@ test_udp_flood(void)
            (unsigned long long)test_cfg.udp_threshold + 1);
 }
 
-/* ─── Entry point ────────────────────────────────────────────────────────── */
+/* ─── Точка входа ────────────────────────────────────────────────────────── */
 
 int
 main(void)
@@ -205,8 +205,9 @@ main(void)
     fw_log_init();
 
     /*
-     * ddos_init() creates the rte_hash tables and precomputes timing constants.
-     * Called once; test functions use different IPs to avoid state interference.
+     * ddos_init() создаёт таблицы rte_hash и предвычисляет временны́е константы.
+     * Вызывается один раз; тестовые функции используют разные IP для исключения
+     * влияния состояния одного теста на другой.
      */
     ddos_init(&test_cfg);
 

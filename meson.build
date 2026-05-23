@@ -6,17 +6,17 @@ project('dpdk_firewall', 'c',
   ]
 )
 
-# Dependencies
+# Зависимости
 dpdk = dependency('libdpdk', required : true)
 jansson = dependency('jansson', required : true)
 
-# Build options
+# Параметры сборки
 max_rules = get_option('max_rules')
 enable_debug = get_option('enable_debug')
 
-# Global compile args
-# _GNU_SOURCE is required for POSIX extensions used by the project (strcasecmp,
-# strnlen, sigaction, sigemptyset) and by DPDK internal headers (rte_string_fns.h).
+# Глобальные аргументы компилятора
+# _GNU_SOURCE необходим для POSIX-расширений, используемых проектом (strcasecmp,
+# strnlen, sigaction, sigemptyset) и внутренними заголовками DPDK (rte_string_fns.h).
 global_args = [
   '-DMAX_RULES=' + max_rules.to_string(),
   '-D_GNU_SOURCE',
@@ -26,10 +26,10 @@ if enable_debug
 endif
 add_project_arguments(global_args, language : 'c')
 
-# Include directories
+# Директории заголовочных файлов
 inc = include_directories('include')
 
-# Main firewall executable sources
+# Исходные файлы основного исполняемого файла брандмауэра
 fw_sources = files(
   'src/main.c',
   'src/config.c',
@@ -49,8 +49,8 @@ executable('dpdk_firewall',
   install : true,
 )
 
-# CLI tool (no DPDK dependency)
+# Утилита командной строки (без зависимости от DPDK)
 subdir('cli')
 
-# Unit tests
+# Юнит-тесты
 subdir('tests')

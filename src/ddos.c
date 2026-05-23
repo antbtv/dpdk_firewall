@@ -14,42 +14,42 @@
 #include "rule_engine.h"
 #include "log.h"
 
-/* ─── Constants ──────────────────────────────────────────────────────────── */
+/* ─── Константы ─────────────────────────────────────────────────────────── */
 
 /*
- * Requested hash capacity.  DPDK cuckoo hash allocates:
+ * Запрошенная ёмкость хэш-таблицы. Cuckoo hash DPDK выделяет:
  *   num_buckets = rte_align32pow2(entries) / RTE_HASH_BUCKET_ENTRIES(8)
- * For entries=65536 (power of 2), positions are in [0, 65535].
+ * Для entries=65536 (степень двойки) позиции находятся в [0, 65535].
  */
 #define HASH_ENTRIES 65536
 
-/* ─── DDoS / blacklist state ─────────────────────────────────────────────── */
+/* ─── Состояние DDoS / чёрного списка ───────────────────────────────────── */
 
 static struct rte_hash  *g_blacklist_hash;
 static struct rte_hash  *g_ddos_hash;
 
 /*
- * Position-indexed arrays.  rte_hash_add_key / rte_hash_lookup return a
- * stable int32_t position used as the array index.
+ * Массивы с индексацией по позиции. rte_hash_add_key / rte_hash_lookup возвращают
+ * стабильную позицию int32_t, используемую как индекс массива.
  */
-static uint64_t          g_blacklist_expires[HASH_ENTRIES]; /* TSC expire time */
+static uint64_t          g_blacklist_expires[HASH_ENTRIES]; /* время истечения TSC */
 static struct ddos_entry g_ddos_entries[HASH_ENTRIES];
 
 static struct ddos_config g_ddos_cfg;
 static uint64_t           g_block_duration_cycles; /* precomputed at init */
 
-/* ─── Meter state (P3-02) ────────────────────────────────────────────────── */
+/* ─── Состояние счётчиков скорости (P3-02) ──────────────────────────────── */
 
 /*
- * Indexed by fw_rule.id (1-based).  Index 0 is unused.
- * IDs are assigned monotonically; at most MAX_RULES rules ever exist,
- * so IDs stay in [1, MAX_RULES].
+ * Индексируются по fw_rule.id (начиная с 1). Индекс 0 не используется.
+ * ID назначаются монотонно; одновременно существует не более MAX_RULES правил,
+ * поэтому ID остаются в диапазоне [1, MAX_RULES].
  */
 static struct rte_meter_srtcm_profile g_meter_profiles[MAX_RULES + 1];
 static struct rte_meter_srtcm         g_meters[MAX_RULES + 1];
 static int                            g_meter_valid[MAX_RULES + 1];
 
-/* ─── Private helper ─────────────────────────────────────────────────────── */
+/* ─── Приватная вспомогательная функция ─────────────────────────────────── */
 
 static struct rte_hash *
 create_hash(const char *name, uint32_t entries)
@@ -60,9 +60,9 @@ create_hash(const char *name, uint32_t entries)
         .key_len    = sizeof(uint32_t),
         .socket_id  = (int)rte_socket_id(),
         /*
-         * RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY: safe for single-writer +
-         * multiple-concurrent-reader access.  Minor inter-lcore write races
-         * in ddos_update() are tolerated for DDoS detection accuracy.
+         * RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY: безопасно для одного писателя +
+         * нескольких параллельных читателей. Незначительные гонки записи между lcore
+         * в ddos_update() допустимы для точности обнаружения DDoS.
          */
         .extra_flag = RTE_HASH_EXTRA_FLAGS_RW_CONCURRENCY,
     };
@@ -72,7 +72,7 @@ create_hash(const char *name, uint32_t entries)
     return h;
 }
 
-/* ─── P3-01: init ────────────────────────────────────────────────────────── */
+/* ─── инициализация ───────────────────────────────────────────────── */
 
 void
 ddos_init(const struct ddos_config *cfg)
@@ -91,8 +91,8 @@ ddos_init(const struct ddos_config *cfg)
     memset(g_ddos_entries,      0, sizeof(g_ddos_entries));
 
     /*
-     * Precompute block_duration in TSC cycles using double to avoid
-     * uint64_t overflow (block_ns * hz can exceed 2^64 for large values).
+     * Предвычислить block_duration в циклах TSC через double для избежания
+     * переполнения uint64_t (block_ns * hz может превысить 2^64 для больших значений).
      */
     g_block_duration_cycles = (uint64_t)(
         (double)cfg->block_duration_ns / 1e9 * (double)rte_get_tsc_hz());
@@ -106,7 +106,7 @@ ddos_init(const struct ddos_config *cfg)
                     cfg->block_duration_ns / (uint64_t)1000000000);
 }
 
-/* ─── P3-01: DDoS sliding-window update ─────────────────────────────────── */
+/* ─── обновление скользящего окна DDoS ───────────────────────────── */
 
 void
 ddos_update(uint32_t src_ip, struct pkt_meta *m, uint64_t now_ns)
@@ -115,16 +115,16 @@ ddos_update(uint32_t src_ip, struct pkt_meta *m, uint64_t now_ns)
         return;
 
     /*
-     * rte_hash_add_key() returns the existing position for known keys,
-     * or creates a new entry and returns its position.
+     * rte_hash_add_key() возвращает существующую позицию для известных ключей,
+     * или создаёт новую запись и возвращает её позицию.
      */
     int32_t pos = rte_hash_add_key(g_ddos_hash, &src_ip);
     if (pos < 0 || pos >= HASH_ENTRIES)
-        return;   /* hash full or unexpected position */
+        return;   /* хэш-таблица заполнена или неожиданная позиция */
 
     struct ddos_entry *e = &g_ddos_entries[pos];
 
-    /* Reset window when it expires */
+    /* Сбросить окно при его истечении */
     if (now_ns - e->window_start_ns >= g_ddos_cfg.window_ns) {
         e->syn_count       = 0;
         e->udp_count       = 0;
@@ -132,7 +132,7 @@ ddos_update(uint32_t src_ip, struct pkt_meta *m, uint64_t now_ns)
         e->window_start_ns = now_ns;
     }
 
-    /* Increment protocol-specific counter and check threshold */
+    /* Увеличить счётчик для конкретного протокола и проверить порог */
     int exceeded = 0;
     if (m->proto == IPPROTO_TCP && (m->tcp_flags & TCP_FLAG_SYN)) {
         if (++e->syn_count > g_ddos_cfg.syn_threshold)
@@ -147,13 +147,13 @@ ddos_update(uint32_t src_ip, struct pkt_meta *m, uint64_t now_ns)
 
     if (exceeded) {
         blacklist_add(src_ip, rte_get_tsc_cycles() + g_block_duration_cycles);
-        /* Reset to avoid re-triggering on every subsequent packet */
+        /* Сбросить счётчики чтобы избежать повторного срабатывания на каждом последующем пакете */
         e->syn_count  = 0;
         e->udp_count  = 0;
         e->icmp_count = 0;
         /*
-         * src_ip is in host byte order on LE ARM: LSB = first IP octet.
-         * Extract bytes manually to print correct dotted-decimal.
+         * src_ip хранится в порядке байт хоста на LE ARM: LSB = первый октет IP.
+         * Вручную извлечь байты для вывода корректного представления с точками.
          */
         RTE_LOG_FW_INFO("ddos: auto-blacklisted %u.%u.%u.%u\n",
                         (src_ip >> 24) & 0xff, (src_ip >> 16) & 0xff,
@@ -161,7 +161,7 @@ ddos_update(uint32_t src_ip, struct pkt_meta *m, uint64_t now_ns)
     }
 }
 
-/* ─── P3-01: blacklist ───────────────────────────────────────────────────── */
+/* ─── чёрный список ──────────────────────────────────────────────── */
 
 int
 blacklist_check(uint32_t src_ip, uint64_t now_cycles)
@@ -171,10 +171,10 @@ blacklist_check(uint32_t src_ip, uint64_t now_cycles)
 
     int32_t pos = rte_hash_lookup(g_blacklist_hash, &src_ip);
     if (pos < 0)
-        return 0;   /* not in blacklist */
+        return 0;   /* не в чёрном списке */
 
     if (now_cycles >= g_blacklist_expires[pos]) {
-        /* TTL expired: lazily remove */
+        /* TTL истёк: ленивое удаление */
         rte_hash_del_key(g_blacklist_hash, &src_ip);
         return 0;
     }
@@ -218,7 +218,7 @@ blacklist_list(uint32_t *ips_out, uint64_t *expires_out, uint32_t *n_out)
     uint64_t    now   = rte_get_tsc_cycles();
     uint32_t    iter  = 0;
     const void *key;
-    void       *val;   /* rte_hash_iterate requires non-NULL data ptr */
+    void       *val;   /* rte_hash_iterate требует ненулевой указатель на данные */
 
     while (rte_hash_iterate(g_blacklist_hash, &key, &val, &iter) >= 0) {
         uint32_t ip = *(const uint32_t *)key;
@@ -227,7 +227,7 @@ blacklist_list(uint32_t *ips_out, uint64_t *expires_out, uint32_t *n_out)
         if (pos < 0)
             continue;
 
-        /* Lazily expire during enumeration */
+        /* Ленивое удаление при перечислении */
         if (now >= g_blacklist_expires[pos]) {
             rte_hash_del_key(g_blacklist_hash, &ip);
             continue;
@@ -241,7 +241,7 @@ blacklist_list(uint32_t *ips_out, uint64_t *expires_out, uint32_t *n_out)
     *n_out = count;
 }
 
-/* ─── P3-02: rate limiting ───────────────────────────────────────────────── */
+/* ─── ограничение скорости ───────────────────────────────────────── */
 
 void
 meter_init_all(void)
@@ -271,7 +271,7 @@ meter_init_all(void)
         struct rte_meter_srtcm_params params = {
             .cir = rules[i].rate_cir,
             .cbs = rules[i].rate_cbs,
-            .ebs = rules[i].rate_cbs,   /* EBS = CBS for simplicity */
+            .ebs = rules[i].rate_cbs,   /* EBS = CBS для упрощения */
         };
 
         int rc = rte_meter_srtcm_profile_config(&g_meter_profiles[id], &params);
@@ -297,7 +297,7 @@ enum rte_color
 meter_check(uint32_t rule_id, uint32_t pkt_len, uint64_t now_cycles)
 {
     if (rule_id == 0 || rule_id > MAX_RULES || !g_meter_valid[rule_id])
-        return RTE_COLOR_GREEN;   /* no meter → accept */
+        return RTE_COLOR_GREEN;   /* нет счётчика → пропустить */
 
     return rte_meter_srtcm_color_blind_check(
         &g_meters[rule_id],

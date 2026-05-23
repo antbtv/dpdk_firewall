@@ -1,11 +1,11 @@
 /*
- * cli/fw_ctl.c — Management CLI for dpdk_firewall (P4-05)
+ * cli/fw_ctl.c — Интерфейс командной строки управления для dpdk_firewall (P4-05)
  *
- * Standalone binary: no DPDK dependency, only POSIX + libjansson.
- * Connects to /var/run/dpdk_firewall/mgmt.sock, sends one JSON command,
- * prints the response, exits 0 on success / 1 on error.
+ * Автономный бинарный файл: без зависимости от DPDK, только POSIX + libjansson.
+ * Подключается к /var/run/dpdk_firewall/mgmt.sock, отправляет одну JSON-команду,
+ * выводит ответ, завершается с кодом 0 при успехе / 1 при ошибке.
  *
- * Usage:
+ * Использование:
  *   fw_ctl rule add [--proto tcp|udp|icmp|any] [--src-ip CIDR] [--dst-ip CIDR]
  *                   [--src-port PORT|RANGE] [--dst-port PORT|RANGE]
  *                   [--priority N] --action accept|drop|rate_limit
@@ -35,9 +35,9 @@
 #define SOCK_PATH   "/var/run/dpdk_firewall/mgmt.sock"
 #define RESP_BUFSZ  (256 * 1024)
 
-/* ─── Argument scanning helpers ──────────────────────────────────────────── */
+/* ─── Вспомогательные функции для разбора аргументов ────────────────────── */
 
-/* Return the value after flag, or NULL if flag not found. */
+/* Вернуть значение после флага, или NULL если флаг не найден. */
 static const char *
 get_arg(int argc, char **argv, const char *flag)
 {
@@ -48,13 +48,13 @@ get_arg(int argc, char **argv, const char *flag)
     return NULL;
 }
 
-/* ─── Socket communication ───────────────────────────────────────────────── */
+/* ─── Взаимодействие через сокет ────────────────────────────────────────── */
 
 /*
- * Send {"cmd": cmd, "args": args} to the mgmt socket and return the parsed
- * JSON response.  args may be NULL (no args field is sent).
- * Caller must json_decref() the returned object.
- * Returns NULL on failure.
+ * Отправить {"cmd": cmd, "args": args} на mgmt-сокет и вернуть разобранный
+ * JSON-ответ. args может быть NULL (поле args не отправляется).
+ * Вызывающий должен вызвать json_decref() для возвращённого объекта.
+ * Возвращает NULL при ошибке.
  */
 static json_t *
 send_command(const char *cmd, json_t *args)
@@ -80,11 +80,11 @@ send_command(const char *cmd, json_t *args)
         return NULL;
     }
 
-    /* Build request JSON */
+    /* Сформировать JSON-запрос */
     json_t *req = json_object();
     json_object_set_new(req, "cmd", json_string(cmd));
     if (args)
-        json_object_set_new(req, "args", args);  /* args ownership transferred */
+        json_object_set_new(req, "args", args);  /* владение args передаётся */
 
     char *req_str = json_dumps(req, JSON_COMPACT);
     json_decref(req);
@@ -93,7 +93,7 @@ send_command(const char *cmd, json_t *args)
         return NULL;
     }
 
-    /* Send request + newline delimiter */
+    /* Отправить запрос + разделитель-перенос строки */
     if (send(fd, req_str, strlen(req_str), 0) < 0 ||
         send(fd, "\n", 1, 0) < 0) {
         fprintf(stderr, "fw_ctl: send failed: %s\n", strerror(errno));
@@ -103,7 +103,7 @@ send_command(const char *cmd, json_t *args)
     }
     free(req_str);
 
-    /* Read response (newline-terminated) */
+    /* Прочитать ответ (заканчивается символом новой строки) */
     char *buf = malloc(RESP_BUFSZ);
     if (!buf) {
         close(fd);
@@ -137,9 +137,9 @@ send_command(const char *cmd, json_t *args)
 }
 
 /*
- * Check "status" field in response.
- * Prints error message if status != "ok".
- * Returns 0 on "ok", 1 otherwise.
+ * Проверить поле "status" в ответе.
+ * Вывести сообщение об ошибке, если status != "ok".
+ * Вернуть 0 при "ok", 1 иначе.
  */
 static int
 check_status(json_t *resp)
@@ -156,7 +156,7 @@ check_status(json_t *resp)
     return 1;
 }
 
-/* ─── Display helpers ────────────────────────────────────────────────────── */
+/* ─── Вспомогательные функции отображения ───────────────────────────────── */
 
 static const char *
 proto_name(int proto)
@@ -174,7 +174,7 @@ proto_name(int proto)
     }
 }
 
-/* Format port range: "0-65535" → "any", "80-80" → "80", else "min-max" */
+/* Форматировать диапазон портов: "0-65535" → "any", "80-80" → "80", иначе "min-max" */
 static const char *
 fmt_port(uint16_t mn, uint16_t mx)
 {
@@ -189,7 +189,7 @@ fmt_port(uint16_t mn, uint16_t mx)
     return buf;
 }
 
-/* Print rule list as a table */
+/* Вывести список правил в виде таблицы */
 static void
 print_rule_table(json_t *rules_arr)
 {
@@ -228,7 +228,7 @@ print_rule_table(json_t *rules_arr)
     }
 }
 
-/* Print global stats */
+/* Вывести глобальную статистику */
 static void
 print_stats(json_t *data)
 {
@@ -268,7 +268,7 @@ print_stats(json_t *data)
     }
 }
 
-/* Print blacklist */
+/* Вывести чёрный список */
 static void
 print_blacklist(json_t *data)
 {
@@ -290,9 +290,9 @@ print_blacklist(json_t *data)
     }
 }
 
-/* ─── Subcommand handlers ────────────────────────────────────────────────── */
+/* ─── Обработчики подкоманд ─────────────────────────────────────────────── */
 
-/* rule add */
+/* добавление правила */
 static int
 do_rule_add(int argc, char **argv)
 {
@@ -338,7 +338,7 @@ do_rule_add(int argc, char **argv)
     return 0;
 }
 
-/* rule del */
+/* удаление правила */
 static int
 do_rule_del(int argc, char **argv)
 {
@@ -359,7 +359,7 @@ do_rule_del(int argc, char **argv)
     return 0;
 }
 
-/* rule list */
+/* список правил */
 static int
 do_rule_list(void)
 {
@@ -376,7 +376,7 @@ do_rule_list(void)
     return 0;
 }
 
-/* rule flush */
+/* сброс всех правил */
 static int
 do_rule_flush(void)
 {
@@ -387,7 +387,7 @@ do_rule_flush(void)
     return 0;
 }
 
-/* stats */
+/* статистика */
 static int
 do_stats(void)
 {
@@ -398,7 +398,7 @@ do_stats(void)
     return 0;
 }
 
-/* blacklist add */
+/* добавление в чёрный список */
 static int
 do_blacklist_add(int argc, char **argv)
 {
@@ -422,7 +422,7 @@ do_blacklist_add(int argc, char **argv)
     return 0;
 }
 
-/* blacklist del */
+/* удаление из чёрного списка */
 static int
 do_blacklist_del(int argc, char **argv)
 {
@@ -442,7 +442,7 @@ do_blacklist_del(int argc, char **argv)
     return 0;
 }
 
-/* blacklist list */
+/* вывод чёрного списка */
 static int
 do_blacklist_list(void)
 {
@@ -453,7 +453,7 @@ do_blacklist_list(void)
     return 0;
 }
 
-/* config reload */
+/* перезагрузка конфигурации */
 static int
 do_config_reload(void)
 {
@@ -464,11 +464,11 @@ do_config_reload(void)
     return 0;
 }
 
-/* set-policy */
+/* установка политики по умолчанию */
 static int
 do_set_policy(int argc, char **argv)
 {
-    /* Policy is the first non-flag argument after "set-policy" */
+    /* Политика — первый аргумент без флага после "set-policy" */
     const char *policy = NULL;
     for (int i = 1; i < argc; i++) {
         if (argv[i][0] != '-') { policy = argv[i]; break; }
@@ -489,7 +489,7 @@ do_set_policy(int argc, char **argv)
     return 0;
 }
 
-/* ─── Subcommand dispatch ────────────────────────────────────────────────── */
+/* ─── Диспетчеризация подкоманд ─────────────────────────────────────────── */
 
 static void
 usage(const char *prog)
@@ -524,7 +524,7 @@ usage(const char *prog)
 static int
 do_rule(int argc, char **argv)
 {
-    /* argv[0]="rule", argv[1]=subcommand */
+    /* argv[0]="rule", argv[1]=подкоманда */
     if (argc < 2) {
         fprintf(stderr, "fw_ctl: rule: expected add|del|list|flush\n");
         return 1;
@@ -565,7 +565,7 @@ do_config(int argc, char **argv)
     return 1;
 }
 
-/* ─── Entry point ────────────────────────────────────────────────────────── */
+/* ─── Точка входа ────────────────────────────────────────────────────────── */
 
 int
 main(int argc, char *argv[])
@@ -575,7 +575,7 @@ main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    /* Pass remaining args (argv+1, argc-1) where argv[0] becomes the subcmd */
+    /* Передать оставшиеся аргументы (argv+1, argc-1), где argv[0] — подкоманда */
     const char *cmd   = argv[1];
     int         sargc = argc - 1;
     char      **sargv = argv + 1;

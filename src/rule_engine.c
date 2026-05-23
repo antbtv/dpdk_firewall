@@ -12,7 +12,7 @@
 #include "firewall.h"
 #include "log.h"
 
-/* ─── ACL field definitions ─────────────────────────────────────────────── */
+/* ─── Определения полей ACL ─────────────────────────────────────────────── */
 
 #define FW_NUM_ACL_FIELDS     5
 #define FW_NUM_ACL_CATEGORIES 1
@@ -26,19 +26,19 @@ enum acl_field_idx {
 };
 
 /*
- * Fields are laid out at fixed offsets within struct pkt_meta:
+ * Поля расположены по фиксированным смещениям внутри struct pkt_meta:
  *
- *   src_ip   : offset  0, 4 bytes  (MASK)    — host byte order (rte_acl MASK requires HBo)
- *   dst_ip   : offset  4, 4 bytes  (MASK)    — host byte order
- *   src_port : offset  8, 2 bytes  (RANGE)   — host byte order (for correct range cmp)
- *   dst_port : offset 10, 2 bytes  (RANGE)   — host byte order
- *   proto    : offset 12, 1 byte   (BITMASK)
+ *   src_ip   : смещение  0, 4 байта  (MASK)    — порядок байт хоста (rte_acl MASK требует HBo)
+ *   dst_ip   : смещение  4, 4 байта  (MASK)    — порядок байт хоста
+ *   src_port : смещение  8, 2 байта  (RANGE)   — порядок байт хоста (для корректного сравнения диапазона)
+ *   dst_port : смещение 10, 2 байта  (RANGE)   — порядок байт хоста
+ *   proto    : смещение 12, 1 байт   (BITMASK)
  *
- * input_index groups must be 4-byte aligned and contiguous:
- *   group 0 → src_ip   (bytes  0-3)
- *   group 1 → dst_ip   (bytes  4-7)
- *   group 2 → src_port + dst_port (bytes 8-11)
- *   group 3 → proto    (byte  12; bytes 13-15 are padding)
+ * Группы input_index должны быть выровнены по 4 байтам и идти непрерывно:
+ *   группа 0 → src_ip   (байты  0-3)
+ *   группа 1 → dst_ip   (байты  4-7)
+ *   группа 2 → src_port + dst_port (байты 8-11)
+ *   группа 3 → proto    (байт  12; байты 13-15 — выравнивание)
  */
 static const struct rte_acl_field_def fw_acl_defs[FW_NUM_ACL_FIELDS] = {
     [ACL_FIELD_SRC_IP] = {
@@ -78,25 +78,25 @@ static const struct rte_acl_field_def fw_acl_defs[FW_NUM_ACL_FIELDS] = {
     },
 };
 
-/* ACL rule struct with our 5 fields */
+/* Структура ACL-правила с 5 полями */
 RTE_ACL_RULE_DEF(fw_acl_rule, FW_NUM_ACL_FIELDS);
 
-/* ─── Global state ──────────────────────────────────────────────────────── */
+/* ─── Глобальное состояние ──────────────────────────────────────────────── */
 
 static struct fw_rule      g_rules[MAX_RULES];
 static uint32_t            g_n_rules;
-static uint32_t            g_next_id;        /* monotonically increasing rule ID */
+static uint32_t            g_next_id;        /* монотонно возрастающий ID правила */
 static struct rte_acl_ctx *g_acl_ctx;
 static rte_rwlock_t        g_acl_rwlock;
-static uint32_t            g_rebuild_count;  /* unique suffix for ACL context name */
+static uint32_t            g_rebuild_count;  /* уникальный суффикс для имени ACL-контекста */
 
-/* ─── Internal helpers ──────────────────────────────────────────────────── */
+/* ─── Внутренние вспомогательные функции ────────────────────────────────── */
 
 /*
- * Convert a subnet mask stored in host byte order to a prefix length.
+ * Преобразовать маску подсети в порядке байт хоста в длину префикса.
  *
- * fw_rule stores masks as HBo uint32_t (after the NBO→HBo fix in parse_cidr):
- *   /24 → mask = 0xFFFFFF00 (HBo) → 8 trailing zeros → prefix = 32 - 8 = 24
+ * fw_rule хранит маски как HBo uint32_t (после исправления NBO→HBo в parse_cidr):
+ *   /24 → mask = 0xFFFFFF00 (HBo) → 8 нулевых бит в конце → prefix = 32 - 8 = 24
  */
 static uint8_t
 mask_to_prefix(uint32_t mask_hbo)
@@ -107,8 +107,8 @@ mask_to_prefix(uint32_t mask_hbo)
 }
 
 /*
- * Populate an rte_acl_rule from a fw_rule.
- * idx: 0-based position in g_rules[]; userdata = idx+1 so 0 means "no match".
+ * Заполнить rte_acl_rule из fw_rule.
+ * idx: позиция в g_rules[] с нуля; userdata = idx+1, поэтому 0 означает "нет совпадения".
  */
 static void
 fw_rule_to_acl(const struct fw_rule *r, uint32_t idx, struct fw_acl_rule *ar)
@@ -116,30 +116,30 @@ fw_rule_to_acl(const struct fw_rule *r, uint32_t idx, struct fw_acl_rule *ar)
     memset(ar, 0, sizeof(*ar));
 
     /*
-     * Priority: fw_rule uses "lower number = higher priority".
-     * rte_acl uses "higher value wins". Map by inversion.
+     * Приоритет: fw_rule использует "меньшее число = более высокий приоритет".
+     * rte_acl использует "большее значение побеждает". Сопоставление инверсией.
      */
     ar->data.priority      = RTE_ACL_MAX_PRIORITY - r->priority;
-    ar->data.userdata      = idx + 1;   /* 1-based; 0 reserved for "no match" */
-    ar->data.category_mask = 0x1;       /* single category */
+    ar->data.userdata      = idx + 1;   /* с единицы; 0 зарезервирован для "нет совпадения" */
+    ar->data.category_mask = 0x1;       /* одна категория */
 
-    /* src_ip — HBo, MASK (rte_acl MASK applies prefix from MSB of integer → needs HBo) */
+    /* src_ip — HBo, MASK (rte_acl MASK применяет префикс от MSB целого числа → нужен HBo) */
     ar->field[ACL_FIELD_SRC_IP].value.u32     = r->src_ip;
     ar->field[ACL_FIELD_SRC_IP].mask_range.u8 = mask_to_prefix(r->src_mask);
 
-    /* dst_ip — HBo, MASK */
+    /* dst_ip — HBo, MASK (порядок байт хоста) */
     ar->field[ACL_FIELD_DST_IP].value.u32     = r->dst_ip;
     ar->field[ACL_FIELD_DST_IP].mask_range.u8 = mask_to_prefix(r->dst_mask);
 
-    /* src_port — HBO, RANGE [min, max] */
+    /* src_port — HBo, RANGE [min, max] */
     ar->field[ACL_FIELD_SRC_PORT].value.u16      = r->src_port_min;
     ar->field[ACL_FIELD_SRC_PORT].mask_range.u16 = r->src_port_max;
 
-    /* dst_port — HBO, RANGE [min, max] */
+    /* dst_port — HBo, RANGE [min, max] */
     ar->field[ACL_FIELD_DST_PORT].value.u16      = r->dst_port_min;
     ar->field[ACL_FIELD_DST_PORT].mask_range.u16 = r->dst_port_max;
 
-    /* proto — BITMASK; proto=0 means any (mask=0 matches all values) */
+    /* proto — BITMASK; proto=0 означает любой (mask=0 совпадает со всеми значениями) */
     if (r->proto == 0) {
         ar->field[ACL_FIELD_PROTO].value.u8      = 0;
         ar->field[ACL_FIELD_PROTO].mask_range.u8 = 0;
@@ -150,8 +150,8 @@ fw_rule_to_acl(const struct fw_rule *r, uint32_t idx, struct fw_acl_rule *ar)
 }
 
 /*
- * Create and compile a new rte_acl_ctx from g_rules[0..g_n_rules-1].
- * Returns NULL if g_n_rules == 0 (caller treats this as "apply default policy").
+ * Создать и скомпилировать новый rte_acl_ctx из g_rules[0..g_n_rules-1].
+ * Возвращает NULL если g_n_rules == 0 (вызывающий трактует это как "применить политику по умолчанию").
  */
 static struct rte_acl_ctx *
 build_acl_ctx(void)
@@ -175,7 +175,7 @@ build_acl_ctx(void)
         return NULL;
     }
 
-    /* Allocate temporary ACL rule array */
+    /* Выделить временный массив ACL-правил */
     struct fw_acl_rule *acl_rules = rte_malloc(NULL,
         sizeof(struct fw_acl_rule) * g_n_rules, 0);
     if (acl_rules == NULL) {
@@ -213,7 +213,7 @@ build_acl_ctx(void)
     return ctx;
 }
 
-/* ─── Public API ────────────────────────────────────────────────────────── */
+/* ─── Публичный API ─────────────────────────────────────────────────────── */
 
 int
 rule_engine_init(void)
@@ -223,14 +223,14 @@ rule_engine_init(void)
     g_rebuild_count = 0;
     g_next_id       = 0;
 
-    /* Copy rules from global config */
+    /* Скопировать правила из глобального конфига */
     g_n_rules = g_fw_config.n_rules;
     if (g_n_rules > MAX_RULES)
         g_n_rules = MAX_RULES;
 
     memcpy(g_rules, g_fw_config.rules, g_n_rules * sizeof(struct fw_rule));
 
-    /* Track max assigned ID so rule_add can issue unique IDs */
+    /* Отслеживать максимальный назначенный ID, чтобы rule_add выдавал уникальные ID */
     for (uint32_t i = 0; i < g_n_rules; i++) {
         if (g_rules[i].id > g_next_id)
             g_next_id = g_rules[i].id;
@@ -250,9 +250,9 @@ rule_engine_rebuild(void)
         return -1;
     }
 
-    /* Atomically swap the context pointer under write-lock.
-     * Forwarding lcores hold the read-lock only during rte_acl_classify
-     * (nanoseconds), so write-lock contention is minimal. */
+    /* Атомарно заменить указатель контекста под блокировкой записи.
+     * Lcores пересылки удерживают блокировку чтения только во время rte_acl_classify
+     * (наносекунды), поэтому конкуренция за блокировку записи минимальна. */
     rte_rwlock_write_lock(&g_acl_rwlock);
     struct rte_acl_ctx *old_ctx = g_acl_ctx;
     g_acl_ctx = new_ctx;
@@ -272,7 +272,7 @@ rule_match(struct pkt_meta *m, uint32_t *rule_id_out, uint32_t pkt_len)
     struct rte_acl_ctx *ctx = g_acl_ctx;
 
     if (ctx == NULL) {
-        /* No rules loaded: apply default policy */
+        /* Правила не загружены: применить политику по умолчанию */
         rte_rwlock_read_unlock(&g_acl_rwlock);
         if (rule_id_out)
             *rule_id_out = 0;
@@ -280,69 +280,69 @@ rule_match(struct pkt_meta *m, uint32_t *rule_id_out, uint32_t pkt_len)
     }
 
     /*
-     * NOTE: rte_acl_classify() returns result=0 for all inputs on
-     * DPDK 24.11.3 / ARM64 Ubuntu (both scalar and NEON paths fail).
-     * Root cause: unknown — likely a platform-specific build issue.
+     * ПРИМЕЧАНИЕ: rte_acl_classify() возвращает result=0 для всех входных данных на
+     * DPDK 24.11.3 / ARM64 Ubuntu (оба пути — scalar и NEON — не работают).
+     * Причина: неизвестна — вероятно платформо-специфическая проблема сборки.
      *
-     * Workaround: priority-ordered linear scan over g_rules[].
-     * Semantics identical to rte_acl: lowest fw_priority number wins.
-     * O(n) per packet — acceptable for MAX_RULES=1024 and a typical
-     * active rule set of tens of rules.
+     * Обходное решение: линейный перебор g_rules[] в порядке приоритетов.
+     * Семантика идентична rte_acl: побеждает наименьший номер fw_priority.
+     * O(n) на пакет — приемлемо для MAX_RULES=1024 и типичного
+     * активного набора правил в несколько десятков.
      *
-     * rte_acl context is still built above (to keep the implementation
-     * in place) but its classify path is bypassed here.
+     * ACL-контекст rte_acl всё ещё строится выше (для сохранения реализации),
+     * но путь classify здесь обходится.
      */
     rte_rwlock_read_unlock(&g_acl_rwlock);
 
-    uint32_t result       = 0;          /* 0 = no match (default policy) */
-    uint32_t best_prio    = UINT32_MAX; /* lower fw_priority = higher importance */
+    uint32_t result       = 0;          /* 0 = нет совпадения (политика по умолчанию) */
+    uint32_t best_prio    = UINT32_MAX; /* меньший fw_priority = более высокая важность */
 
     for (uint32_t i = 0; i < g_n_rules; i++) {
         const struct fw_rule *r = &g_rules[i];
 
-        /* Early exit: can't beat current best */
+        /* Ранний выход: нельзя превзойти текущий лучший результат */
         if (r->priority >= best_prio)
             continue;
 
-        /* src_ip CIDR (mask=0 → wildcard) */
+        /* src_ip CIDR (mask=0 → wildcard, совпадает с любым) */
         if (r->src_mask && (m->src_ip & r->src_mask) != (r->src_ip & r->src_mask))
             continue;
-        /* dst_ip CIDR */
+        /* dst_ip CIDR (совпадение по маске) */
         if (r->dst_mask && (m->dst_ip & r->dst_mask) != (r->dst_ip & r->dst_mask))
             continue;
-        /* proto (0 = any) */
+        /* proto (0 = любой) */
         if (r->proto && m->proto != r->proto)
             continue;
-        /* TCP flags (mask=0 means rule doesn't filter on flags) */
+        /* TCP-флаги (mask=0 означает что правило не фильтрует по флагам) */
         if (r->tcp_flags_mask &&
             (m->tcp_flags & r->tcp_flags_mask) != r->tcp_flags_val)
             continue;
-        /* port ranges */
+        /* диапазоны портов */
         if (m->src_port < r->src_port_min || m->src_port > r->src_port_max)
             continue;
         if (m->dst_port < r->dst_port_min || m->dst_port > r->dst_port_max)
             continue;
-        /* ICMP type/code (255 = any) */
+        /* тип/код ICMP (255 = любой) */
         if (r->icmp_type != 255 && m->icmp_type != r->icmp_type)
             continue;
         if (r->icmp_code != 255 && m->icmp_code != r->icmp_code)
             continue;
 
         best_prio = r->priority;
-        result    = i + 1; /* 1-based, 0 reserved for "no match" */
+        result    = i + 1; /* с единицы, 0 зарезервирован для "нет совпадения" */
     }
 
     RTE_LOG_FW_DEBUG("rule_match: src=%08x proto=%u result=%u\n",
                      m->src_ip, m->proto, result);
 
     if (result == 0) {
-        /* No rule matched: apply default policy */
+        /* Ни одно правило не совпало: применить политику по умолчанию */
         if (rule_id_out)
             *rule_id_out = 0;
         return g_default_policy;
     }
 
-    /* result is a 1-based index into g_rules[] */
+    /* result — индекс в g_rules[] начиная с 1 */
     uint32_t idx = result - 1;
     if (idx >= g_n_rules) {
         if (rule_id_out)
@@ -395,10 +395,10 @@ int
 rule_engine_reload_from_config(void)
 {
     /*
-     * Sync the rule_engine's internal g_rules[] from the global config.
-     * Called by config_reload() after the config file is re-parsed into
-     * g_fw_config.  Dynamic rules added via rule_add/del are discarded here
-     * (they are not persisted to the config file).
+     * Синхронизировать внутренний g_rules[] rule_engine из глобального конфига.
+     * Вызывается из config_reload() после повторного разбора конфига в g_fw_config.
+     * Динамически добавленные правила через rule_add/del здесь отбрасываются
+     * (они не сохраняются в файл конфига).
      */
     g_n_rules = g_fw_config.n_rules;
     if (g_n_rules > MAX_RULES)
@@ -406,7 +406,7 @@ rule_engine_reload_from_config(void)
 
     memcpy(g_rules, g_fw_config.rules, g_n_rules * sizeof(struct fw_rule));
 
-    /* Keep g_next_id above the highest config-file ID to avoid reuse */
+    /* Удерживать g_next_id выше наибольшего ID из конфига для избежания повторного использования */
     for (uint32_t i = 0; i < g_n_rules; i++) {
         if (g_rules[i].id > g_next_id)
             g_next_id = g_rules[i].id;

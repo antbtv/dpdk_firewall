@@ -7,11 +7,6 @@
 #include "port.h"
 #include "log.h"
 
-/*
- * TODO: P4-01 — full atomic counters implementation.
- *
- * Phase 1 stubs: minimal implementation so the project compiles.
- */
 
 static volatile uint64_t s_rx_pkts;
 static volatile uint64_t s_tx_pkts;

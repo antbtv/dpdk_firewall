@@ -3,10 +3,10 @@
 
 #include <rte_log.h>
 
-/* Registered log type handle — defined in src/log.c */
+/* Дескриптор зарегистрированного типа лога — определён в src/log.c */
 extern uint32_t fw_logtype;
 
-/* ─── Logging macros ────────────────────────────────────────────────────── */
+/* ─── Макросы логирования ────────────────────────────────────────────────── */
 
 #define RTE_LOG_FW_ERR(fmt, ...) \
     rte_log(RTE_LOG_ERR,   fw_logtype, "FW ERR  " fmt, ##__VA_ARGS__)
@@ -17,17 +17,17 @@ extern uint32_t fw_logtype;
 #define RTE_LOG_FW_INFO(fmt, ...) \
     rte_log(RTE_LOG_INFO,  fw_logtype, "FW INFO " fmt, ##__VA_ARGS__)
 
-/* Debug macro includes file and line for easier tracing */
+/* Отладочный макрос включает имя файла и номер строки для упрощения трассировки */
 #define RTE_LOG_FW_DEBUG(fmt, ...) \
     rte_log(RTE_LOG_DEBUG, fw_logtype, \
             "FW DBG  [%s:%d] " fmt, __FILE__, __LINE__, ##__VA_ARGS__)
 
-/* ─── Log type initialisation ───────────────────────────────────────────── */
+/* ─── Инициализация типа лога ───────────────────────────────────────────── */
 
 /**
- * Register the firewall log type with DPDK.
- * Must be called once before any RTE_LOG_FW_* macro is used.
- * Returns 0 on success, negative on error.
+ * Зарегистрировать тип лога межсетевого экрана в DPDK.
+ * Должна вызываться один раз до использования любого макроса RTE_LOG_FW_*.
+ * Возвращает 0 при успехе, отрицательное значение при ошибке.
  */
 int fw_log_init(void);
 

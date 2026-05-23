@@ -4,16 +4,16 @@
 #include <signal.h>
 
 /**
- * g_sighup_flag — set by SIGHUP handler in main.c; polled by mgmt_server_run().
- * Defined in main.c, declared here so mgmt.c can access it.
+ * g_sighup_flag — устанавливается обработчиком SIGHUP в main.c; опрашивается mgmt_server_run().
+ * Определён в main.c, объявлен здесь для доступа из mgmt.c.
  */
 extern volatile sig_atomic_t g_sighup_flag;
 
 /**
- * mgmt_server_run() — blocking control-plane loop on lcore 0.
- * Handles the management UNIX socket, periodic stats dump,
- * and config hot-reload on SIGHUP.
- * Returns when g_force_quit is set.
+ * mgmt_server_run() — блокирующий цикл плоскости управления на lcore 0.
+ * Обрабатывает управляющий UNIX-сокет, периодический дамп статистики
+ * и горячую перезагрузку конфига по сигналу SIGHUP.
+ * Возвращает управление когда устанавливается g_force_quit.
  */
 void mgmt_server_run(void);
 

@@ -7,7 +7,7 @@
 #include "firewall.h"
 #include "config.h"
 
-/** Per-source-IP traffic counters (position-indexed via rte_hash). */
+/** Счётчики трафика на исходный IP-адрес (индексированы позицией через rte_hash). */
 struct ddos_entry {
     uint64_t syn_count;
     uint64_t udp_count;
@@ -15,56 +15,56 @@ struct ddos_entry {
     uint64_t window_start_ns;
 };
 
-/* ─── DDoS / Blacklist API ───────────────────────────────────────────────── */
+/* ─── API DDoS / чёрного списка ─────────────────────────────────────────── */
 
 /**
- * ddos_init() — create hash tables, precompute timing constants.
- * Must be called after rte_eal_init() and before any other ddos_* function.
+ * ddos_init() — создать хэш-таблицы, вычислить константы времени.
+ * Должна вызываться после rte_eal_init() и до любой другой функции ddos_*.
  */
 void ddos_init(const struct ddos_config *cfg);
 
 /**
- * ddos_update() — update sliding-window counters for src_ip.
- * If a threshold is exceeded, src_ip is auto-added to the blacklist.
- * @param now_ns  Current time in nanoseconds (convert from TSC with rte_get_tsc_hz()).
+ * ddos_update() — обновить счётчики скользящего окна для src_ip.
+ * Если порог превышен, src_ip автоматически добавляется в чёрный список.
+ * @param now_ns  Текущее время в наносекундах (перевод из TSC через rte_get_tsc_hz()).
  */
 void ddos_update(uint32_t src_ip, struct pkt_meta *m, uint64_t now_ns);
 
 /**
- * blacklist_check() — O(1) blacklist lookup.
- * @param now_cycles  rte_get_tsc_cycles() value.
- * @return 1 if src_ip is currently blocked, 0 otherwise.
+ * blacklist_check() — поиск в чёрном списке за O(1).
+ * @param now_cycles  Значение rte_get_tsc_cycles().
+ * @return 1 если src_ip в данный момент заблокирован, 0 иначе.
  */
 int  blacklist_check(uint32_t src_ip, uint64_t now_cycles);
 
-/** blacklist_add() — block src_ip until expire_cycles (TSC value). */
+/** blacklist_add() — заблокировать src_ip до expire_cycles (значение TSC). */
 void blacklist_add(uint32_t src_ip, uint64_t expire_cycles);
 
-/** blacklist_del() — manually unblock src_ip. */
+/** blacklist_del() — снять блокировку с src_ip вручную. */
 void blacklist_del(uint32_t src_ip);
 
 /**
- * blacklist_list() — enumerate all currently blocked IPs.
- * @param ips_out      Caller-allocated array for blocked IPs.
- * @param expires_out  Caller-allocated array for TSC expire times.
- * @param n_out        Output: number of entries written.
+ * blacklist_list() — перечислить все заблокированные IP-адреса.
+ * @param ips_out      Массив, выделенный вызывающим, для заблокированных IP.
+ * @param expires_out  Массив, выделенный вызывающим, для времён истечения TSC.
+ * @param n_out        Выходной параметр: количество записанных элементов.
  */
 void blacklist_list(uint32_t *ips_out, uint64_t *expires_out, uint32_t *n_out);
 
-/* ─── Rate limiting API (P3-02) ──────────────────────────────────────────── */
+/* ─── API ограничения скорости (P3-02) ──────────────────────────────────── */
 
 /**
- * meter_init_all() — initialize srTCM meters for all ACTION_RATE_LIMIT rules.
- * Must be called after rule_engine_init() and again after every config reload.
+ * meter_init_all() — инициализировать счётчики srTCM для всех правил ACTION_RATE_LIMIT.
+ * Должна вызываться после rule_engine_init() и после каждой перезагрузки конфига.
  */
 void meter_init_all(void);
 
 /**
- * meter_check() — run the srTCM color check for a packet.
- * @param rule_id    Rule ID returned by rule_match() (must be a RATE_LIMIT rule).
- * @param pkt_len    Packet length in bytes.
- * @param now_cycles rte_get_tsc_cycles() value.
- * @return RTE_COLOR_GREEN/YELLOW → forward; RTE_COLOR_RED → drop.
+ * meter_check() — выполнить цветовую проверку srTCM для пакета.
+ * @param rule_id    ID правила, возвращённый rule_match() (должно быть правило RATE_LIMIT).
+ * @param pkt_len    Длина пакета в байтах.
+ * @param now_cycles Значение rte_get_tsc_cycles().
+ * @return RTE_COLOR_GREEN/YELLOW → пропустить; RTE_COLOR_RED → отбросить.
  */
 enum rte_color meter_check(uint32_t rule_id, uint32_t pkt_len, uint64_t now_cycles);
 

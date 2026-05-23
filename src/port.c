@@ -12,7 +12,7 @@
 
 struct rte_mempool *g_mbuf_pool = NULL;
 
-/* Default port configuration: no multi-queue, no offloads required */
+/* Конфигурация порта по умолчанию: без мультиочереди, без требуемых разгрузок */
 static const struct rte_eth_conf port_conf_default = {
     .rxmode = {
         .mq_mode = RTE_ETH_MQ_RX_NONE,
@@ -22,7 +22,7 @@ static const struct rte_eth_conf port_conf_default = {
     },
 };
 
-/* ─── Internal helpers ──────────────────────────────────────────────────── */
+/* ─── Внутренние вспомогательные функции ────────────────────────────────── */
 
 static int
 port_configure(uint16_t port_id)
@@ -40,7 +40,7 @@ port_configure(uint16_t port_id)
         return ret;
     }
 
-    /* Enable scatter if the driver requires it */
+    /* Включить scatter если драйвер требует этого */
     if (dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE)
         port_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_MBUF_FAST_FREE;
 
@@ -51,7 +51,7 @@ port_configure(uint16_t port_id)
         return ret;
     }
 
-    /* Adjust ring sizes to what the device supports */
+    /* Скорректировать размеры колец под возможности устройства */
     uint16_t nb_rx = RX_RING_SIZE;
     uint16_t nb_tx = TX_RING_SIZE;
     ret = rte_eth_dev_adjust_nb_rx_tx_desc(port_id, &nb_rx, &nb_tx);
@@ -61,7 +61,7 @@ port_configure(uint16_t port_id)
         return ret;
     }
 
-    /* Set up RX queue 0 */
+    /* Настроить очередь RX 0 */
     rxconf = dev_info.default_rxconf;
     rxconf.offloads = port_conf.rxmode.offloads;
     ret = rte_eth_rx_queue_setup(port_id, 0, nb_rx,
@@ -73,7 +73,7 @@ port_configure(uint16_t port_id)
         return ret;
     }
 
-    /* Set up TX queue 0 */
+    /* Настроить очередь TX 0 */
     txconf = dev_info.default_txconf;
     txconf.offloads = port_conf.txmode.offloads;
     ret = rte_eth_tx_queue_setup(port_id, 0, nb_tx,
@@ -88,7 +88,7 @@ port_configure(uint16_t port_id)
     return 0;
 }
 
-/* ─── Public API ────────────────────────────────────────────────────────── */
+/* ─── Публичный API ─────────────────────────────────────────────────────── */
 
 int
 port_init_all(uint16_t n_ports)
@@ -99,7 +99,7 @@ port_init_all(uint16_t n_ports)
         return -1;
     }
 
-    /* Create a single shared mbuf pool large enough for all ports */
+    /* Создать единый общий пул mbuf достаточного размера для всех портов */
     unsigned int total_mbufs = NUM_MBUFS * n_ports;
     g_mbuf_pool = rte_pktmbuf_pool_create("mbuf_pool",
                                           total_mbufs,
@@ -126,15 +126,15 @@ port_init_all(uint16_t n_ports)
             return ret;
         }
 
-        /* Enable promiscuous mode so bridge sees all frames */
+        /* Включить неразборчивый режим чтобы бридж видел все кадры */
         ret = rte_eth_promiscuous_enable(port_id);
         if (ret != 0) {
             RTE_LOG_FW_WARN("Cannot enable promiscuous on port %u: %s\n",
                             port_id, rte_strerror(-ret));
-            /* non-fatal — continue */
+            /* некритично — продолжаем */
         }
 
-        /* Wait up to 9 s for link to come UP (required for I210 DMA init) */
+        /* Ждать до 9 с установления соединения (требуется для инициализации DMA I210) */
         struct rte_eth_link link;
         for (int i = 0; i < 9; i++) {
             rte_eth_link_get_nowait(port_id, &link);

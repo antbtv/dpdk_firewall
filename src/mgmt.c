@@ -1,14 +1,14 @@
 /*
- * src/mgmt.c — Control-plane management server (P4-02, P4-03)
+ * src/mgmt.c — Сервер управления плоскостью управления (P4-02, P4-03)
  *
- * UNIX domain socket at /var/run/dpdk_firewall/mgmt.sock.
- * Protocol: newline-delimited JSON, one command per connection.
- *   Request:  {"cmd": "<name>", "args": {...}}\n
- *   Response: {"status": "ok"|"error", "data": {...}, "msg": "<text>"}\n
+ * UNIX-сокет по адресу /var/run/dpdk_firewall/mgmt.sock.
+ * Протокол: JSON с разделителем-переводом строки, одна команда на соединение.
+ *   Запрос:  {"cmd": "<name>", "args": {...}}\n
+ *   Ответ:   {"status": "ok"|"error", "data": {...}, "msg": "<text>"}\n
  *
- * Runs on lcore 0 in an epoll loop (100 ms timeout) so it can also:
- *   - Check g_sighup_flag and perform hot-reload
- *   - Call stats_periodic_dump() every 5 seconds
+ * Работает на lcore 0 в цикле epoll (таймаут 100 мс), также:
+ *   - Проверяет g_sighup_flag и выполняет горячую перезагрузку
+ *   - Вызывает stats_periodic_dump() каждые 5 секунд
  */
 
 #include <stdio.h>
@@ -36,19 +36,19 @@
 #include "ddos.h"
 #include "log.h"
 
-/* ─── Constants ──────────────────────────────────────────────────────────── */
+/* ─── Константы ─────────────────────────────────────────────────────────── */
 
 #define SOCK_DIR    "/var/run/dpdk_firewall"
 #define SOCK_PATH   "/var/run/dpdk_firewall/mgmt.sock"
 #define BACKLOG     8
 #define REQ_BUF_SZ  4096
 
-/* ─── IP helpers ─────────────────────────────────────────────────────────── */
+/* ─── Вспомогательные функции для IP-адресов ────────────────────────────── */
 
 /*
- * All IPs in rule_engine / ddos are in host byte order (HBo).
- * inet_ntop/inet_pton work with network byte order (NBO).
- * Conversion: HBo → htonl() → NBO for printing; NBO → ntohl() → HBo for storing.
+ * Все IP-адреса в rule_engine / ddos хранятся в порядке байт хоста (HBo).
+ * inet_ntop/inet_pton работают с порядком байт сети (NBO).
+ * Преобразование: HBo → htonl() → NBO для вывода; NBO → ntohl() → HBo для хранения.
  */
 
 static void
@@ -70,8 +70,8 @@ ip_str_to_hbo(const char *s, uint32_t *out)
 }
 
 /*
- * Parse "1.2.3.4/24" or "1.2.3.4" (implies /32).
- * Stores result in host byte order.
+ * Разобрать "1.2.3.4/24" или "1.2.3.4" (подразумевает /32).
+ * Результат сохраняется в порядке байт хоста.
  */
 static int
 parse_cidr_str(const char *s, uint32_t *ip_out, uint32_t *mask_out)
@@ -92,12 +92,12 @@ parse_cidr_str(const char *s, uint32_t *ip_out, uint32_t *mask_out)
     if (inet_pton(AF_INET, buf, &a) != 1)
         return -1;
 
-    *ip_out   = ntohl(a.s_addr);   /* HBo */
+    *ip_out   = ntohl(a.s_addr);   /* порядок байт хоста */
     *mask_out = (prefix == 0) ? 0u : (~0u << (32 - prefix));
     return 0;
 }
 
-/* Parse "80" or "1024-65535" → min, max. Returns -1 if min > max. */
+/* Разобрать "80" или "1024-65535" → min, max. Возвращает -1 если min > max. */
 static int
 parse_port_range(const char *s, uint16_t *min_out, uint16_t *max_out)
 {
@@ -119,7 +119,7 @@ parse_port_range(const char *s, uint16_t *min_out, uint16_t *max_out)
     return 0;
 }
 
-/* ─── JSON response builders ─────────────────────────────────────────────── */
+/* ─── Построители JSON-ответов ───────────────────────────────────────────── */
 
 static json_t *
 make_ok(json_t *data)
@@ -140,7 +140,7 @@ make_error(const char *msg)
     return r;
 }
 
-/* ─── Rule ↔ JSON conversion ─────────────────────────────────────────────── */
+/* ─── Преобразование правило ↔ JSON ─────────────────────────────────────── */
 
 static const char *
 action_to_str(fw_action_t a)
@@ -187,14 +187,14 @@ rule_to_json(const struct fw_rule *r)
 }
 
 /*
- * Parse a fw_rule from JSON args (rule_add command).
- * All fields are optional except "action".
+ * Разобрать fw_rule из JSON-аргументов (команда rule_add).
+ * Все поля опциональны кроме "action".
  */
 static int
 json_to_fw_rule(json_t *args, struct fw_rule *r)
 {
     memset(r, 0, sizeof(*r));
-    /* Defaults: wildcard ports, any ICMP type/code */
+    /* Значения по умолчанию: wildcard-порты, любой тип/код ICMP */
     r->src_port_max = 65535;
     r->dst_port_max = 65535;
     r->icmp_type    = 255;
@@ -203,31 +203,31 @@ json_to_fw_rule(json_t *args, struct fw_rule *r)
 
     json_t *j;
 
-    /* proto */
+    /* протокол */
     j = json_object_get(args, "proto");
     if (j && json_is_string(j)) {
         const char *p = json_string_value(j);
         if      (strcasecmp(p, "tcp")  == 0) r->proto = IPPROTO_TCP;
         else if (strcasecmp(p, "udp")  == 0) r->proto = IPPROTO_UDP;
         else if (strcasecmp(p, "icmp") == 0) r->proto = IPPROTO_ICMP;
-        else if (strcasecmp(p, "any")  != 0) return -1;  /* "any" → 0 */
+        else if (strcasecmp(p, "any")  != 0) return -1;  /* "any" → 0 (любой) */
     }
 
-    /* src_ip (CIDR string) */
+    /* src_ip (строка CIDR) */
     j = json_object_get(args, "src_ip");
     if (j && json_is_string(j)) {
         if (parse_cidr_str(json_string_value(j), &r->src_ip, &r->src_mask) != 0)
             return -1;
     }
 
-    /* dst_ip (CIDR string) */
+    /* dst_ip (строка CIDR) */
     j = json_object_get(args, "dst_ip");
     if (j && json_is_string(j)) {
         if (parse_cidr_str(json_string_value(j), &r->dst_ip, &r->dst_mask) != 0)
             return -1;
     }
 
-    /* src_port (string: "80" or "1024-65535") */
+    /* src_port (строка: "80" или "1024-65535") */
     j = json_object_get(args, "src_port");
     if (j && json_is_string(j)) {
         if (parse_port_range(json_string_value(j),
@@ -235,7 +235,7 @@ json_to_fw_rule(json_t *args, struct fw_rule *r)
             return -1;
     }
 
-    /* dst_port */
+    /* dst_port (порт назначения) */
     j = json_object_get(args, "dst_port");
     if (j && json_is_string(j)) {
         if (parse_port_range(json_string_value(j),
@@ -243,12 +243,12 @@ json_to_fw_rule(json_t *args, struct fw_rule *r)
             return -1;
     }
 
-    /* priority */
+    /* приоритет */
     j = json_object_get(args, "priority");
     if (j && json_is_integer(j))
         r->priority = (uint32_t)json_integer_value(j);
 
-    /* action (required) */
+    /* действие (обязательно) */
     j = json_object_get(args, "action");
     if (!j || !json_is_string(j))
         return -1;
@@ -258,29 +258,29 @@ json_to_fw_rule(json_t *args, struct fw_rule *r)
     else if (strcasecmp(act, "rate_limit") == 0) r->action = ACTION_RATE_LIMIT;
     else return -1;
 
-    /* rate_cir_kbps → bytes/sec */
+    /* rate_cir_kbps → байт/с */
     j = json_object_get(args, "rate_cir_kbps");
     if (j && json_is_integer(j))
         r->rate_cir = (uint64_t)json_integer_value(j) * 1000 / 8;
 
-    /* rate_cbs_bytes */
+    /* размер пика в байтах */
     j = json_object_get(args, "rate_cbs_bytes");
     if (j && json_is_integer(j))
         r->rate_cbs = (uint64_t)json_integer_value(j);
 
-    /* comment */
+    /* комментарий */
     j = json_object_get(args, "comment");
     if (j && json_is_string(j))
         snprintf(r->comment, sizeof(r->comment), "%s", json_string_value(j));
 
-    /* Validate: RATE_LIMIT rule must have rate_cir > 0 (avoid divide-by-zero in meter) */
+    /* Проверка: правило RATE_LIMIT должно иметь rate_cir > 0 (избежать деления на ноль в meter) */
     if (r->action == ACTION_RATE_LIMIT && r->rate_cir == 0)
         return -1;
 
     return 0;
 }
 
-/* ─── Command handlers ───────────────────────────────────────────────────── */
+/* ─── Обработчики команд ─────────────────────────────────────────────────── */
 
 /* 1. rule_add */
 static json_t *
@@ -300,7 +300,7 @@ cmd_rule_add(json_t *args)
         return make_error(msg);
     }
 
-    /* rc is the assigned rule ID on success */
+    /* rc при успехе содержит назначенный ID правила */
     json_t *data = json_object();
     json_object_set_new(data, "id", json_integer(rc));
     return make_ok(data);
@@ -487,7 +487,7 @@ cmd_config_reload(json_t *args)
     int rc = config_reload();
     if (rc != 0)
         return make_error("config_reload failed");
-    /* Re-initialize meters for any new RATE_LIMIT rules */
+    /* Повторно инициализировать счётчики для новых правил RATE_LIMIT */
     meter_init_all();
     return make_ok(NULL);
 }
@@ -509,13 +509,13 @@ cmd_set_default_policy(json_t *args)
     else if (strcasecmp(act, "drop")   == 0) new_policy = ACTION_DROP;
     else return make_error("action must be \"accept\" or \"drop\"");
 
-    /* g_default_policy is volatile — simple assignment is safe on lcore 0 */
+    /* g_default_policy — volatile, простое присваивание безопасно на lcore 0 */
     g_default_policy = new_policy;
     RTE_LOG_FW_INFO("mgmt: default policy set to %s\n", act);
     return make_ok(NULL);
 }
 
-/* ─── Command dispatch table ─────────────────────────────────────────────── */
+/* ─── Таблица диспетчеризации команд ────────────────────────────────────── */
 
 typedef json_t *(*cmd_fn_t)(json_t *args);
 
@@ -547,12 +547,12 @@ dispatch(const char *cmd, json_t *args)
     return make_error(msg);
 }
 
-/* ─── Per-connection handler ─────────────────────────────────────────────── */
+/* ─── Обработчик на соединение ──────────────────────────────────────────── */
 
 static void
 handle_client(int fd)
 {
-    /* 500 ms receive timeout */
+    /* таймаут приёма 500 мс */
     struct timeval tv = { .tv_sec = 0, .tv_usec = 500000 };
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
@@ -564,7 +564,7 @@ handle_client(int fd)
     }
     buf[n] = '\0';
 
-    /* Strip trailing newline/whitespace */
+    /* Удалить завершающий перевод строки/пробелы */
     char *nl = strchr(buf, '\n');
     if (nl)
         *nl = '\0';
@@ -587,7 +587,7 @@ handle_client(int fd)
         json_decref(req);
     }
 
-    /* Serialize and send response followed by newline */
+    /* Сериализовать и отправить ответ с завершающим переводом строки */
     char *resp_str = json_dumps(resp, JSON_COMPACT);
     json_decref(resp);
 
@@ -600,13 +600,13 @@ handle_client(int fd)
     close(fd);
 }
 
-/* ─── Server socket setup ────────────────────────────────────────────────── */
+/* ─── Настройка серверного сокета ────────────────────────────────────────── */
 
 static int
 create_server_socket(void)
 {
     mkdir(SOCK_DIR, 0750);
-    unlink(SOCK_PATH);    /* remove stale socket from previous run */
+    unlink(SOCK_PATH);    /* удалить устаревший сокет от предыдущего запуска */
 
     int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
@@ -636,7 +636,7 @@ create_server_socket(void)
     return fd;
 }
 
-/* ─── Fallback loop (no socket) ──────────────────────────────────────────── */
+/* ─── Резервный цикл (без сокета) ───────────────────────────────────────── */
 
 static void
 fallback_loop(void)
@@ -658,7 +658,7 @@ fallback_loop(void)
     }
 }
 
-/* ─── Main control-plane loop ────────────────────────────────────────────── */
+/* ─── Главный цикл плоскости управления ─────────────────────────────────── */
 
 void
 mgmt_server_run(void)
@@ -693,7 +693,7 @@ mgmt_server_run(void)
 
     while (!g_force_quit) {
 
-        /* Hot-reload on SIGHUP */
+        /* Горячая перезагрузка по SIGHUP */
         if (g_sighup_flag) {
             g_sighup_flag = 0;
             RTE_LOG_FW_INFO("mgmt: SIGHUP received — reloading config\n");
@@ -701,14 +701,14 @@ mgmt_server_run(void)
             meter_init_all();
         }
 
-        /* Periodic stats dump every 5 seconds */
+        /* Периодический дамп статистики каждые 5 секунд */
         uint64_t now = rte_get_tsc_cycles();
         if (now - last_dump >= dump_interval) {
             stats_periodic_dump();
             last_dump = now;
         }
 
-        /* Wait for new connection (100 ms timeout to stay responsive) */
+        /* Ожидать новое соединение (таймаут 100 мс для сохранения отзывчивости) */
         struct epoll_event events[1];
         int n = epoll_wait(epoll_fd, events, 1, 100);
         if (n < 0) {

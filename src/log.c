@@ -1,6 +1,6 @@
 #include "log.h"
 
-/* Global log type handle used by all RTE_LOG_FW_* macros */
+/* Глобальный дескриптор типа лога, используемый всеми макросами RTE_LOG_FW_* */
 uint32_t fw_logtype;
 
 int

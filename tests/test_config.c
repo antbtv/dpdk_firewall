@@ -1,17 +1,17 @@
 /*
- * tests/test_config.c — Unit tests for the config parser (P4-06)
+ * tests/test_config.c — Юнит-тесты парсера конфигурации (P4-06)
  *
- * Links: config.c, rule_engine.c, log.c  (via tests/meson.build)
- * Does NOT link main.c → must define stub globals g_default_policy / g_force_quit.
- * g_fw_config is defined in the linked config.c — no stub needed here.
+ * Компонуется с: config.c, rule_engine.c, log.c  (через tests/meson.build)
+ * НЕ компонуется с main.c → необходимо определить заглушки g_default_policy / g_force_quit.
+ * g_fw_config определён в подключаемом config.c — заглушка здесь не нужна.
  *
- * Tests:
- *  1. Load a valid 4-rule config → n_rules == 4
- *  2. JSON missing required 'mode' → config_load() returns non-zero
- *  3. Rule with unknown action → config_load() returns non-zero
+ * Тесты:
+ *  1. Загрузка корректного конфига с 4 правилами → n_rules == 4
+ *  2. JSON без обязательного поля 'mode' → config_load() возвращает ненулевой код
+ *  3. Правило с неизвестным действием → config_load() возвращает ненулевой код
  *  4. src_ip "192.168.1.0/24" → src_ip = 0xC0A80100 (HBo), mask = 0xFFFFFF00 (HBo)
  *  5. dst_port "1024-65535" → dst_port_min=1024, dst_port_max=65535
- *  6. Hot-reload: overwrite temp file, config_reload() updates n_rules
+ *  6. Горячая перезагрузка: перезаписать временный файл, config_reload() обновляет n_rules
  */
 
 #include <stdio.h>
@@ -26,12 +26,12 @@
 #include "rule_engine.h"
 #include "log.h"
 
-/* ─── Stub globals (normally defined in main.c) ─────────────────────────── */
+/* ─── Заглушки глобальных переменных (обычно определяются в main.c) ─────── */
 
 volatile fw_action_t g_default_policy = ACTION_DROP;
 volatile int         g_force_quit     = 0;
 
-/* ─── Temp file helper ───────────────────────────────────────────────────── */
+/* ─── Вспомогательная функция для временных файлов ─────────────────────── */
 
 static void
 write_file(const char *path, const char *content)
@@ -42,9 +42,9 @@ write_file(const char *path, const char *content)
     fclose(f);
 }
 
-/* ─── Test JSON fixtures ─────────────────────────────────────────────────── */
+/* ─── Тестовые JSON-фикстуры ─────────────────────────────────────────────── */
 
-/* Valid config with exactly 4 rules */
+/* Корректный конфиг ровно с 4 правилами */
 static const char JSON_VALID_4[] =
 "{"
 "  \"version\": 1,"
@@ -64,7 +64,7 @@ static const char JSON_VALID_4[] =
 "  ]"
 "}";
 
-/* Missing required 'mode' field */
+/* Отсутствует обязательное поле 'mode' */
 static const char JSON_NO_MODE[] =
 "{"
 "  \"version\": 1,"
@@ -73,7 +73,7 @@ static const char JSON_NO_MODE[] =
 "  \"rules\": []"
 "}";
 
-/* Rule with unknown action */
+/* Правило с неизвестным действием */
 static const char JSON_BAD_ACTION[] =
 "{"
 "  \"version\": 1,"
@@ -85,7 +85,7 @@ static const char JSON_BAD_ACTION[] =
 "  ]"
 "}";
 
-/* Single rule with src_ip CIDR and dst_port range */
+/* Одно правило с CIDR в src_ip и диапазоном dst_port */
 static const char JSON_CIDR_PORTS[] =
 "{"
 "  \"version\": 1,"
@@ -100,7 +100,7 @@ static const char JSON_CIDR_PORTS[] =
 "  ]"
 "}";
 
-/* Config with 2 rules (used in hot-reload test — initial state) */
+/* Конфиг с 2 правилами (используется в тесте горячей перезагрузки — начальное состояние) */
 static const char JSON_2_RULES[] =
 "{"
 "  \"version\": 1,"
@@ -113,7 +113,7 @@ static const char JSON_2_RULES[] =
 "  ]"
 "}";
 
-/* Config with 1 rule (used in hot-reload test — reloaded state) */
+/* Конфиг с 1 правилом (используется в тесте горячей перезагрузки — состояние после перезагрузки) */
 static const char JSON_1_RULE[] =
 "{"
 "  \"version\": 1,"
@@ -125,10 +125,10 @@ static const char JSON_1_RULE[] =
 "  ]"
 "}";
 
-/* ─── Tests ───────────────────────────────────────────────────────────────── */
+/* ─── Тесты ───────────────────────────────────────────────────────────────── */
 
 /*
- * Test 1: valid 4-rule config parses without error.
+ * Тест 1: корректный конфиг с 4 правилами разбирается без ошибок.
  */
 static void
 test_valid_config(void)
@@ -144,7 +144,7 @@ test_valid_config(void)
 }
 
 /*
- * Test 2: JSON missing required 'mode' field → config_load returns non-zero.
+ * Тест 2: JSON без обязательного поля 'mode' → config_load возвращает ненулевой код.
  */
 static void
 test_missing_mode(void)
@@ -158,7 +158,7 @@ test_missing_mode(void)
 }
 
 /*
- * Test 3: rule with unknown action string → config_load returns non-zero.
+ * Тест 3: правило с неизвестной строкой действия → config_load возвращает ненулевой код.
  */
 static void
 test_bad_action(void)
@@ -172,15 +172,15 @@ test_bad_action(void)
 }
 
 /*
- * Test 4: src_ip "192.168.1.0/24" → host byte order values.
+ * Тест 4: src_ip "192.168.1.0/24" → значения в порядке байт хоста (HBo).
  *
- * Host byte order (HBo) on LE ARM:
+ * Порядок байт хоста (HBo) на LE ARM:
  *   192.168.1.0 → 0xC0A80100  (C0=192, A8=168, 01=1, 00=0)
- *   /24 mask    → 0xFFFFFF00  (top 24 bits set)
+ *   маска /24   → 0xFFFFFF00  (старшие 24 бита установлены)
  *
- * parse_cidr() in config.c stores HBo (ntohl(addr.s_addr)), and
- * rte_acl MASK type requires HBo for correct CIDR matching on LE ARM
- * (applies prefix from MSB of the integer value).
+ * parse_cidr() в config.c хранит HBo (ntohl(addr.s_addr)), а
+ * rte_acl тип MASK требует HBo для корректного CIDR-сопоставления на LE ARM
+ * (применяет префикс от MSB целочисленного значения).
  */
 static void
 test_cidr_parse(void)
@@ -192,20 +192,20 @@ test_cidr_parse(void)
     assert(g_fw_config.n_rules == 1);
 
     const struct fw_rule *r = &g_fw_config.rules[0];
-    assert(r->src_ip   == 0xC0A80100u);   /* 192.168.1.0 in host byte order */
-    assert(r->src_mask == 0xFFFFFF00u);   /* /24 mask in host byte order    */
+    assert(r->src_ip   == 0xC0A80100u);   /* 192.168.1.0 в порядке байт хоста */
+    assert(r->src_mask == 0xFFFFFF00u);   /* маска /24 в порядке байт хоста   */
 
     printf("  test 4 PASS: src_ip=0x%08X mask=0x%08X\n",
            r->src_ip, r->src_mask);
 }
 
 /*
- * Test 5: dst_port "1024-65535" → dst_port_min=1024, dst_port_max=65535.
+ * Тест 5: dst_port "1024-65535" → dst_port_min=1024, dst_port_max=65535.
  */
 static void
 test_port_range(void)
 {
-    /* Reuse the file already written by test 4 */
+    /* Повторно использовать файл, записанный в тесте 4 */
     write_file("/tmp/fw_tc_cidr.json", JSON_CIDR_PORTS);
 
     int rc = config_load("/tmp/fw_tc_cidr.json");
@@ -221,28 +221,28 @@ test_port_range(void)
 }
 
 /*
- * Test 6: hot-reload — overwrite config file, config_reload() updates n_rules.
+ * Тест 6: горячая перезагрузка — перезаписать файл конфига, config_reload() обновляет n_rules.
  *
- * Flow:
- *   1. config_load() with 2-rule JSON → n_rules=2
- *   2. Overwrite same file with 1-rule JSON
- *   3. config_reload() → reads from stored config_path, n_rules=1
+ * Сценарий:
+ *   1. config_load() с JSON из 2 правил → n_rules=2
+ *   2. Перезаписать тот же файл JSON из 1 правила
+ *   3. config_reload() → читает из сохранённого config_path, n_rules=1
  */
 static void
 test_hot_reload(void)
 {
     const char *path = "/tmp/fw_tc_reload.json";
 
-    /* Initial load: 2 rules */
+    /* Начальная загрузка: 2 правила */
     write_file(path, JSON_2_RULES);
     int rc = config_load(path);
     assert(rc == 0);
     assert(g_fw_config.n_rules == 2);
 
-    /* Overwrite with 1 rule */
+    /* Перезаписать с 1 правилом */
     write_file(path, JSON_1_RULE);
 
-    /* config_reload() re-reads from g_fw_config.config_path */
+    /* config_reload() перечитывает из g_fw_config.config_path */
     rc = config_reload();
     assert(rc == 0);
     assert(g_fw_config.n_rules == 1);
@@ -252,15 +252,15 @@ test_hot_reload(void)
            g_fw_config.n_rules);
 }
 
-/* ─── Entry point ────────────────────────────────────────────────────────── */
+/* ─── Точка входа ────────────────────────────────────────────────────────── */
 
 int
 main(void)
 {
     /*
-     * Minimal EAL init: no PCI scan, 64 MB of memory.
-     * Required because config_reload() calls rule_engine_reload_from_config()
-     * → rule_engine_rebuild() → rte_acl_create() (needs EAL + hugepages).
+     * Минимальная инициализация EAL: без сканирования PCI, 64 МБ памяти.
+     * Необходима, так как config_reload() вызывает rule_engine_reload_from_config()
+     * → rule_engine_rebuild() → rte_acl_create() (требует EAL + hugepages).
      */
     static char arg0[] = "test_config";
     static char arg1[] = "--no-pci";
@@ -277,10 +277,10 @@ main(void)
     fw_log_init();
 
     /*
-     * Initialise the rule engine with an empty rule set.
-     * Tests 1-5 only call config_load() (no rule_engine calls).
-     * Test 6 calls config_reload() which internally calls
-     * rule_engine_reload_from_config(); the engine must be initialised first.
+     * Инициализировать движок правил с пустым набором правил.
+     * Тесты 1-5 вызывают только config_load() (без вызовов rule_engine).
+     * Тест 6 вызывает config_reload(), который внутри вызывает
+     * rule_engine_reload_from_config(); движок должен быть инициализирован заранее.
      */
     memset(&g_fw_config, 0, sizeof(g_fw_config));
     if (rule_engine_init() != 0) {

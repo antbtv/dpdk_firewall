@@ -6,7 +6,7 @@
 
 #define FW_MAX_PORTS 2
 
-/** Atomic snapshot of all counters + per-port hardware stats. */
+/** Атомарный снимок всех счётчиков + аппаратная статистика на порт. */
 struct fw_stats_snapshot {
     uint64_t total_rx_pkts;
     uint64_t total_tx_pkts;

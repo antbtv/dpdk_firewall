@@ -3,7 +3,7 @@ jansson = dependency('jansson', required : true)
 
 test_inc = include_directories('../include')
 
-# test_rule_engine
+# тест движка правил
 test_rule_engine = executable('test_rule_engine',
   sources : [
     files('test_rule_engine.c'),
@@ -15,7 +15,7 @@ test_rule_engine = executable('test_rule_engine',
 )
 test('rule_engine', test_rule_engine)
 
-# test_ddos
+# тест DDoS-защиты
 test_ddos = executable('test_ddos',
   sources : [
     files('test_ddos.c'),
@@ -27,7 +27,7 @@ test_ddos = executable('test_ddos',
 )
 test('ddos', test_ddos)
 
-# test_config — includes rule_engine.c because config_reload() calls rule_engine_reload_from_config()
+# тест конфигурации — включает rule_engine.c, так как config_reload() вызывает rule_engine_reload_from_config()
 test_config = executable('test_config',
   sources : [
     files('test_config.c'),

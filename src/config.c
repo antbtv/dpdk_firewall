@@ -12,21 +12,21 @@
 #include "log.h"
 
 /*
- * Forward declaration: sync rule_engine's internal copy from g_fw_config,
- * then rebuild the ACL context.  Defined in rule_engine.c.
- * Using a forward declaration (not a header include) to avoid circular deps.
+ * Предварительное объявление: синхронизировать внутреннюю копию rule_engine из g_fw_config,
+ * затем пересобрать ACL-контекст. Определено в rule_engine.c.
+ * Используется предварительное объявление (не включение заголовка) для избежания циклических зависимостей.
  */
 extern int rule_engine_reload_from_config(void);
 
-/* ─── Global configuration instance ────────────────────────────────────── */
+/* ─── Глобальный экземпляр конфигурации ─────────────────────────────────── */
 
 struct fw_config g_fw_config;
 
-/* ─── Parsing helpers ───────────────────────────────────────────────────── */
+/* ─── Вспомогательные функции разбора ───────────────────────────────────── */
 
 /**
- * Parse "192.168.0.0/24" → ip (network byte order), mask (network byte order).
- * Wildcard (prefix 0 or absent): mask = 0.
+ * Разобрать "192.168.0.0/24" → ip (порядок байт сети), mask (порядок байт сети).
+ * Wildcard (префикс 0 или отсутствует): mask = 0.
  */
 static int
 parse_cidr(const char *s, uint32_t *ip_out, uint32_t *mask_out)
@@ -47,19 +47,19 @@ parse_cidr(const char *s, uint32_t *ip_out, uint32_t *mask_out)
     if (inet_pton(AF_INET, buf, &addr) != 1)
         return -1;
 
-    *ip_out = ntohl(addr.s_addr);   /* host byte order — rte_acl MASK requires HBo */
+    *ip_out = ntohl(addr.s_addr);   /* порядок байт хоста — rte_acl MASK требует HBo */
 
     if (prefix == 0)
         *mask_out = 0;
     else
-        *mask_out = ~((1u << (32 - prefix)) - 1);  /* HBo mask: 0xFFFFFF00 for /24 */
+        *mask_out = ~((1u << (32 - prefix)) - 1);  /* маска HBo: 0xFFFFFF00 для /24 */
 
     return 0;
 }
 
 /**
- * Parse "80" → min=max=80, "1024-65535" → min=1024, max=65535.
- * Returns -1 if min > max.
+ * Разобрать "80" → min=max=80, "1024-65535" → min=1024, max=65535.
+ * Возвращает -1 если min > max.
  */
 static int
 parse_port_range(const char *s, uint16_t *min_out, uint16_t *max_out)
@@ -83,7 +83,7 @@ parse_port_range(const char *s, uint16_t *min_out, uint16_t *max_out)
     return 0;
 }
 
-/** "tcp"→6, "udp"→17, "icmp"→1, anything else → 0 (any) */
+/** "tcp"→6, "udp"→17, "icmp"→1, всё остальное → 0 (любой) */
 static uint8_t
 parse_proto(const char *s)
 {
@@ -94,8 +94,8 @@ parse_proto(const char *s)
 }
 
 /**
- * "SYN,ACK" → TCP_FLAG_SYN | TCP_FLAG_ACK stored in *flags_out.
- * Returns 0 on success, -1 if an unknown token is encountered.
+ * "SYN,ACK" → TCP_FLAG_SYN | TCP_FLAG_ACK, записывается в *flags_out.
+ * Возвращает 0 при успехе, -1 при обнаружении неизвестного токена.
  */
 static int
 parse_tcp_flags(const char *s, uint8_t *flags_out)
@@ -112,14 +112,14 @@ parse_tcp_flags(const char *s, uint8_t *flags_out)
         else if (strcasecmp(tok, "PSH") == 0) flags |= TCP_FLAG_PSH;
         else if (strcasecmp(tok, "ACK") == 0) flags |= TCP_FLAG_ACK;
         else if (strcasecmp(tok, "URG") == 0) flags |= TCP_FLAG_URG;
-        else return -1;  /* unknown flag token → reject */
+        else return -1;  /* неизвестный токен флага → отклонить */
         tok = strtok(NULL, ", ");
     }
     *flags_out = flags;
     return 0;
 }
 
-/** "accept"→0, "drop"→1, "rate_limit"→2; returns -1 on unknown */
+/** "accept"→0, "drop"→1, "rate_limit"→2; возвращает -1 при неизвестном значении */
 static int
 parse_action(const char *s, fw_action_t *out)
 {
@@ -129,7 +129,7 @@ parse_action(const char *s, fw_action_t *out)
     return -1;
 }
 
-/** "debug"→8, "info"→7, "warning"/"warn"→5, "error"/"err"→4; default info */
+/** "debug"→8, "info"→7, "warning"/"warn"→5, "error"/"err"→4; по умолчанию info */
 static int
 parse_log_level(const char *s)
 {
@@ -144,15 +144,15 @@ parse_log_level(const char *s)
 }
 
 /**
- * Parse a single rule object from JSON.
- * Returns 0 on success, -1 on error.
+ * Разобрать один объект правила из JSON.
+ * Возвращает 0 при успехе, -1 при ошибке.
  */
 static int
 parse_rule(json_t *obj, struct fw_rule *r)
 {
     memset(r, 0, sizeof(*r));
 
-    /* Required: action */
+    /* Обязательно: action */
     json_t *jact = json_object_get(obj, "action");
     if (!jact || !json_is_string(jact)) {
         RTE_LOG_FW_ERR("Rule missing 'action' field\n");
@@ -163,24 +163,24 @@ parse_rule(json_t *obj, struct fw_rule *r)
         return -1;
     }
 
-    /* Optional: id, priority */
+    /* Опционально: id, priority */
     json_t *j = json_object_get(obj, "id");
     if (j && json_is_integer(j)) r->id = (uint32_t)json_integer_value(j);
 
     j = json_object_get(obj, "priority");
     r->priority = (j && json_is_integer(j)) ? (uint32_t)json_integer_value(j) : 100;
 
-    /* Optional: comment */
+    /* Опционально: comment */
     j = json_object_get(obj, "comment");
     if (j && json_is_string(j))
         snprintf(r->comment, sizeof(r->comment), "%s", json_string_value(j));
 
-    /* Optional: proto */
+    /* Опционально: proto */
     j = json_object_get(obj, "proto");
     if (j && json_is_string(j))
         r->proto = parse_proto(json_string_value(j));
 
-    /* Optional: src_ip / dst_ip (CIDR) */
+    /* Опционально: src_ip / dst_ip (CIDR) */
     j = json_object_get(obj, "src_ip");
     if (j && json_is_string(j)) {
         if (parse_cidr(json_string_value(j), &r->src_ip, &r->src_mask) != 0) {
@@ -197,7 +197,7 @@ parse_rule(json_t *obj, struct fw_rule *r)
         }
     }
 
-    /* Optional: src_port / dst_port (number or range string) */
+    /* Опционально: src_port / dst_port (число или строка диапазона) */
     j = json_object_get(obj, "src_port");
     if (j && json_is_string(j)) {
         if (parse_port_range(json_string_value(j),
@@ -222,7 +222,7 @@ parse_rule(json_t *obj, struct fw_rule *r)
         r->dst_port_max = 65535;
     }
 
-    /* Optional: tcp_flags (mask = all matched bits, val = expected bits) */
+    /* Опционально: tcp_flags (mask = все проверяемые биты, val = ожидаемые биты) */
     j = json_object_get(obj, "tcp_flags");
     if (j && json_is_string(j)) {
         uint8_t flags;
@@ -232,17 +232,17 @@ parse_rule(json_t *obj, struct fw_rule *r)
             return -1;
         }
         r->tcp_flags_val  = flags;
-        r->tcp_flags_mask = flags;  /* exact match on specified flags */
+        r->tcp_flags_mask = flags;  /* точное совпадение по указанным флагам */
     }
 
-    /* Optional: icmp_type / icmp_code (255 = any) */
+    /* Опционально: icmp_type / icmp_code (255 = любой) */
     j = json_object_get(obj, "icmp_type");
     r->icmp_type = (j && json_is_integer(j)) ? (uint8_t)json_integer_value(j) : 255;
 
     j = json_object_get(obj, "icmp_code");
     r->icmp_code = (j && json_is_integer(j)) ? (uint8_t)json_integer_value(j) : 255;
 
-    /* Optional: rate (for ACTION_RATE_LIMIT) */
+    /* Опционально: rate (для ACTION_RATE_LIMIT) */
     j = json_object_get(obj, "rate");
     if (j && json_is_object(j)) {
         json_t *cir = json_object_get(j, "cir_kbps");
@@ -253,13 +253,13 @@ parse_rule(json_t *obj, struct fw_rule *r)
             r->rate_cbs = (uint64_t)json_integer_value(cbs);
     }
 
-    /* Validate: RATE_LIMIT rule must have rate_cir > 0 (avoid divide-by-zero in meter) */
+    /* Проверка: правило RATE_LIMIT должно иметь rate_cir > 0 (избежать деления на ноль в meter) */
     if (r->action == ACTION_RATE_LIMIT && r->rate_cir == 0) {
         RTE_LOG_FW_ERR("RATE_LIMIT rule requires rate.cir_kbps > 0\n");
         return -1;
     }
 
-    /* Validate: id=0 is reserved for "no match" in rte_acl userdata */
+    /* Проверка: id=0 зарезервирован для "нет совпадения" в userdata rte_acl */
     if (r->id == 0) {
         static uint32_t s_auto_id = 0;
         r->id = ++s_auto_id;
@@ -268,12 +268,12 @@ parse_rule(json_t *obj, struct fw_rule *r)
     return 0;
 }
 
-/* ─── Internal load ─────────────────────────────────────────────────────── */
+/* ─── Внутренняя загрузка ───────────────────────────────────────────────── */
 
 static int
 do_load(const char *path, struct fw_config *cfg)
 {
-    /* All declarations hoisted to avoid -Wjump-misses-init with goto. */
+    /* Все объявления вынесены наверх для избежания -Wjump-misses-init при goto. */
     json_error_t  jerr;
     json_t       *root;
     json_t       *jmode, *jports, *jwan, *jlan, *jpol;
@@ -289,7 +289,7 @@ do_load(const char *path, struct fw_config *cfg)
         return -1;
     }
 
-    /* Validate required field: mode */
+    /* Проверить обязательное поле: mode */
     jmode = json_object_get(root, "mode");
     if (!jmode || !json_is_string(jmode)) {
         RTE_LOG_FW_ERR("Config missing required field 'mode'\n");
@@ -301,7 +301,7 @@ do_load(const char *path, struct fw_config *cfg)
         goto out;
     }
 
-    /* Validate required field: ports.wan */
+    /* Проверить обязательное поле: ports.wan */
     jports = json_object_get(root, "ports");
     if (!jports || !json_is_object(jports)) {
         RTE_LOG_FW_ERR("Config missing required 'ports' section\n");
@@ -315,7 +315,7 @@ do_load(const char *path, struct fw_config *cfg)
     snprintf(cfg->wan_pci_addr, sizeof(cfg->wan_pci_addr),
              "%s", json_string_value(jwan));
 
-    /* Optional: ports.lan — "builtin" resolved to known PCI address */
+    /* Опционально: ports.lan — "builtin" разрешается в известный PCI-адрес */
     jlan = json_object_get(jports, "lan");
     if (jlan && json_is_string(jlan)) {
         if (strcasecmp(json_string_value(jlan), "builtin") == 0)
@@ -325,7 +325,7 @@ do_load(const char *path, struct fw_config *cfg)
                      "%s", json_string_value(jlan));
     }
 
-    /* default_policy */
+    /* политика по умолчанию */
     jpol = json_object_get(root, "default_policy");
     if (jpol && json_is_string(jpol)) {
         if (parse_action(json_string_value(jpol), &cfg->default_policy) != 0) {
@@ -334,10 +334,10 @@ do_load(const char *path, struct fw_config *cfg)
             goto out;
         }
     } else {
-        cfg->default_policy = ACTION_DROP;  /* safe default */
+        cfg->default_policy = ACTION_DROP;  /* безопасное значение по умолчанию */
     }
 
-    /* DDoS configuration */
+    /* Конфигурация DDoS */
     jddos = json_object_get(root, "ddos");
     if (jddos && json_is_object(jddos)) {
         j = json_object_get(jddos, "enabled");
@@ -366,7 +366,7 @@ do_load(const char *path, struct fw_config *cfg)
         cfg->ddos_cfg.block_duration_ns = block_s * 1000000000ULL;
     }
 
-    /* Logging configuration */
+    /* Конфигурация логирования */
     jlog = json_object_get(root, "logging");
     if (jlog && json_is_object(jlog)) {
         j = json_object_get(jlog, "level");
@@ -381,7 +381,7 @@ do_load(const char *path, struct fw_config *cfg)
         cfg->log_level = RTE_LOG_INFO;
     }
 
-    /* Rules array */
+    /* Массив правил */
     jrules = json_object_get(root, "rules");
     cfg->n_rules = 0;
     if (jrules && json_is_array(jrules)) {
@@ -407,7 +407,7 @@ out:
     return rc;
 }
 
-/* ─── Public API ────────────────────────────────────────────────────────── */
+/* ─── Публичный API ─────────────────────────────────────────────────────── */
 
 int
 config_load(const char *path)
@@ -415,7 +415,7 @@ config_load(const char *path)
     RTE_LOG_FW_INFO("Loading config from %s\n", path);
     int rc = do_load(path, &g_fw_config);
     if (rc == 0) {
-        /* Sync global default policy */
+        /* Синхронизировать глобальную политику по умолчанию */
         g_default_policy = g_fw_config.default_policy;
         RTE_LOG_FW_INFO("Loaded %u rule(s), default_policy=%s\n",
                         g_fw_config.n_rules,
@@ -430,8 +430,8 @@ config_reload(void)
     RTE_LOG_FW_INFO("Hot-reloading config from %s\n", g_fw_config.config_path);
 
     /*
-     * static to avoid a ~197 KB stack allocation (1024 rules × ~192 B each).
-     * config_reload() is only called from lcore 0, so no concurrent access.
+     * static для избежания выделения ~197 КБ на стеке (1024 правила × ~192 байт).
+     * config_reload() вызывается только из lcore 0, параллельного доступа нет.
      */
     static struct fw_config new_cfg;
     if (do_load(g_fw_config.config_path, &new_cfg) != 0) {
@@ -439,11 +439,11 @@ config_reload(void)
         return -1;
     }
 
-    /* Swap atomically (single write on lcore 0, no concurrent readers for config struct) */
+    /* Атомарная замена (одна запись на lcore 0, нет конкурентных читателей структуры конфига) */
     g_fw_config = new_cfg;
     g_default_policy = g_fw_config.default_policy;
 
-    /* Sync rule_engine's internal g_rules[] from the new config and rebuild ACL */
+    /* Синхронизировать внутренний g_rules[] rule_engine из нового конфига и пересобрать ACL */
     int rc = rule_engine_reload_from_config();
     if (rc != 0)
         RTE_LOG_FW_WARN("rule_engine_rebuild() returned %d after reload\n", rc);
